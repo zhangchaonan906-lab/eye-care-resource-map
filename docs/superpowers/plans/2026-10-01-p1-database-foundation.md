@@ -35,6 +35,8 @@
 - [ ] **Step 1: 创建测试数据库配置**
 
 ```yaml
+name: eye-map
+
 services:
   db:
     image: postgis/postgis:17-3.5
@@ -59,7 +61,7 @@ volumes:
 
 Run: `docker compose config --quiet`
 
-Expected: exit code 0。随后运行 `docker compose up -d --wait`，Expected: `db` 为 healthy；`docker compose exec -T db psql -U eye -d eye -Atqc 'select current_database()'` 输出 `eye`。若 daemon 不可用，先启动 Docker Desktop，再重复命令。
+Expected: exit code 0。顶层 `name` 使中文目录下的 Compose 项目名稳定。随后运行 `docker compose up -d --wait`，Expected: `db` 为 healthy；`docker compose exec -T db psql -U eye -d eye -Atqc 'select current_database()'` 输出 `eye`。若 daemon 不可用，先启动 Docker Desktop，再重复命令。
 
 - [ ] **Step 3: Commit**
 
