@@ -2,7 +2,7 @@
 set -Eeuo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-project_name="eye-p5-check-$(python3 -c 'import secrets; print(secrets.token_hex(4))')"
+project_name="eye-api-check-$(python3 -c 'import secrets; print(secrets.token_hex(4))')"
 if [[ -z "${EYE_MAP_POSTGRES_PASSWORD:-}" ]]; then
   export EYE_MAP_POSTGRES_PASSWORD="$(python3 -c 'import secrets; print(secrets.token_hex(32))')"
 fi
@@ -12,10 +12,12 @@ fi
 collector_password="$(python3 -c 'import secrets; print(secrets.token_hex(32))')"
 etl_password="$(python3 -c 'import secrets; print(secrets.token_hex(32))')"
 geocode_password="$(python3 -c 'import secrets; print(secrets.token_hex(32))')"
+public_api_password="$(python3 -c 'import secrets; print(secrets.token_hex(32))')"
 export DATABASE_URL="postgresql://eye_collector_runtime:${collector_password}@127.0.0.1:${EYE_MAP_DB_PORT}/eye"
 export ETL_DATABASE_URL="postgresql://eye_etl_runtime:${etl_password}@127.0.0.1:${EYE_MAP_DB_PORT}/eye"
 export DATABASE_ADMIN_URL="postgresql://eye:${EYE_MAP_POSTGRES_PASSWORD}@127.0.0.1:${EYE_MAP_DB_PORT}/eye"
 export GEOCODE_DATABASE_URL="postgresql://eye_geocode_runtime:${geocode_password}@127.0.0.1:${EYE_MAP_DB_PORT}/eye"
+export PUBLIC_API_DATABASE_URL="postgresql://eye_public_api_runtime:${public_api_password}@127.0.0.1:${EYE_MAP_DB_PORT}/eye"
 
 compose() {
   docker compose -p "$project_name" "$@"
@@ -55,6 +57,8 @@ compose exec -T db psql -h 127.0.0.1 -U eye -d eye -v ON_ERROR_STOP=1 \
   -f /workspace/db/migrations/009_real_export_compatibility.sql
 compose exec -T db psql -h 127.0.0.1 -U eye -d eye -v ON_ERROR_STOP=1 \
   -f /workspace/db/migrations/010_etl_import_run_scope.sql
+compose exec -T db psql -h 127.0.0.1 -U eye -d eye -v ON_ERROR_STOP=1 \
+  -f /workspace/db/migrations/011_public_api.sql
 
 for sql_file in \
   /workspace/db/tests/001_core.sql \
@@ -68,11 +72,15 @@ for sql_file in \
   compose exec -T db psql -h 127.0.0.1 -U eye -d eye -v ON_ERROR_STOP=1 -f "$sql_file"
 done
 compose exec -T db psql -h 127.0.0.1 -U eye -d eye -v ON_ERROR_STOP=1 \
+  -f /workspace/db/tests/011_public_api.sql
+compose exec -T db psql -h 127.0.0.1 -U eye -d eye -v ON_ERROR_STOP=1 \
   -v collector_password="$collector_password" -f /workspace/scripts/provision-collector-login.sql
 compose exec -T db psql -h 127.0.0.1 -U eye -d eye -v ON_ERROR_STOP=1 \
   -v etl_password="$etl_password" -f /workspace/scripts/provision-etl-login.sql
 compose exec -T db psql -h 127.0.0.1 -U eye -d eye -v ON_ERROR_STOP=1 \
   -v geocode_password="$geocode_password" -f /workspace/scripts/provision-geocode-login.sql
+compose exec -T db psql -h 127.0.0.1 -U eye -d eye -v ON_ERROR_STOP=1 \
+  -v api_password="$public_api_password" -f /workspace/scripts/provision-public-api-login.sql
 compose exec -T db psql -h 127.0.0.1 -U eye -d eye -v ON_ERROR_STOP=1 \
   -f /workspace/scripts/seed-fixture-source.sql
 
@@ -97,3 +105,8 @@ assert result["dry_run"] is True
 assert result["counts"]["candidates_read"] <= 2
 '
 python3 -m pytest -m geocode_database -q
+
+cd "$repo_root/apps/web"
+npm ci --ignore-scripts
+npm test
+npm run test:db

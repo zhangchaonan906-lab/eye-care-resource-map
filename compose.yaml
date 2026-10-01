@@ -14,7 +14,7 @@ services:
       - ./db:/workspace/db:ro
       - ./scripts:/workspace/scripts:ro
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U eye -d eye"]
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U eye -d eye"]
       interval: 2s
       timeout: 2s
       retries: 30
