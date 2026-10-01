@@ -144,3 +144,24 @@ export function parseFacilityQuery(url: URL) {
     cursor: cursor?.id,
   };
 }
+
+const DECIMAL = /^-?(?:\d+(?:\.\d*)?|\.\d+)(?:e[+-]?\d+)?$/i;
+
+function parseFiniteCoordinate(value: string | null, name: "lat" | "lng", min: number, max: number): number {
+  if (value === null || !DECIMAL.test(value.trim())) throw new ValidationError(`${name} 必须是有效经纬度`);
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed < min || parsed > max) throw new ValidationError(`${name} 超出有效范围`);
+  return parsed;
+}
+
+export function parseNearbyQuery(url: URL) {
+  const latitude = parseFiniteCoordinate(url.searchParams.get("lat"), "lat", -90, 90);
+  const longitude = parseFiniteCoordinate(url.searchParams.get("lng"), "lng", -180, 180);
+  const rawRadius = url.searchParams.get("radius");
+  const radiusMeters = rawRadius === null ? 10_000 : Number(rawRadius);
+  if (rawRadius !== null && (!DECIMAL.test(rawRadius.trim()) || !Number.isFinite(radiusMeters) || radiusMeters < 500 || radiusMeters > 50_000)) {
+    throw new ValidationError("radius 必须在 500 到 50000 米之间");
+  }
+  const limit = parseLimit(url.searchParams.get("limit"), 50, 100);
+  return { latitude, longitude, radiusMeters, category: parseCategory(url.searchParams.get("category")), limit };
+}

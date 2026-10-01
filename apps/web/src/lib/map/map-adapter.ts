@@ -4,8 +4,10 @@ import type { PublicFacility } from "../public-api/types";
 import type { BasemapConfig } from "../basemap/types";
 
 export type Viewport = { bbox: [number, number, number, number]; zoom: number };
+export type MapLocation = { longitude: number; latitude: number };
 export type FacilityMapController = {
   setFacilities: (facilities: PublicFacility[], selectedId: string | null) => void;
+  setUserLocation: (location: MapLocation | null) => void;
   flyTo: (longitude: number, latitude: number) => void;
   destroy: () => void;
 };
@@ -26,6 +28,7 @@ export async function initializeFacilityMap(
     attributionControl: false,
   });
   let latest: FeatureCollection<Point, { id: string; name: string }> = { type: "FeatureCollection", features: [] };
+  let latestUserLocation: FeatureCollection<Point, Record<string, never>> = { type: "FeatureCollection", features: [] };
   let selectedId: string | null = null;
 
   const emitViewport = () => {
@@ -44,6 +47,19 @@ export async function initializeFacilityMap(
       source: "facilities",
       filter: ["has", "point_count"],
       paint: { "circle-color": "#166b79", "circle-radius": ["step", ["get", "point_count"], 18, 20, 23, 100, 29], "circle-stroke-color": "#ffffff", "circle-stroke-width": 2 },
+    });
+    map.addSource("user-location", { type: "geojson", data: latestUserLocation });
+    map.addLayer({
+      id: "user-location-halo",
+      type: "circle",
+      source: "user-location",
+      paint: { "circle-radius": 13, "circle-color": "#2878e8", "circle-opacity": 0.2, "circle-stroke-color": "#ffffff", "circle-stroke-width": 2 },
+    });
+    map.addLayer({
+      id: "user-location-point",
+      type: "circle",
+      source: "user-location",
+      paint: { "circle-radius": 6, "circle-color": "#1769d2", "circle-stroke-color": "#ffffff", "circle-stroke-width": 2 },
     });
     map.addLayer({
       id: "facility-cluster-count",
@@ -105,6 +121,18 @@ export async function initializeFacilityMap(
         map.setPaintProperty("facility-points", "circle-color", ["case", ["==", ["get", "id"], selectedId ?? ""], "#d14d52", "#1e8794"]);
         map.setPaintProperty("facility-points", "circle-radius", ["case", ["==", ["get", "id"], selectedId ?? ""], 9, 7]);
       }
+    },
+    setUserLocation(location) {
+      latestUserLocation = {
+        type: "FeatureCollection",
+        features: location ? [{
+          type: "Feature",
+          geometry: { type: "Point", coordinates: [location.longitude, location.latitude] },
+          properties: {},
+        }] : [],
+      };
+      const source = map.getSource("user-location") as GeoJSONSource | undefined;
+      source?.setData(latestUserLocation);
     },
     flyTo(longitude, latitude) {
       map.flyTo({ center: [longitude, latitude], zoom: Math.max(map.getZoom(), 13), duration: 500 });

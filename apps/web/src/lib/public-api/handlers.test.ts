@@ -22,6 +22,7 @@ function repository(overrides: Partial<PublicFacilityRepository> = {}): PublicFa
     list: vi.fn().mockResolvedValue({ items: [], nextCursor: null }),
     getById: vi.fn().mockResolvedValue(null),
     search: vi.fn().mockResolvedValue({ items: [], nextCursor: null }),
+    nearby: vi.fn().mockResolvedValue({ items: [], truncated: false }),
     countPublished: vi.fn().mockResolvedValue(0),
     ...overrides,
   };

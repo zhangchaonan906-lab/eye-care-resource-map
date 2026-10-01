@@ -26,6 +26,8 @@ export type PublicFacility = {
   lastVerifiedAt: string;
 };
 
+export type NearbyFacility = PublicFacility & { distanceMeters: number };
+
 export type Page<T> = { items: T[]; nextCursor: string | null };
 export type FacilityListInput = {
   bbox: [number, number, number, number];
@@ -43,10 +45,19 @@ export type SearchInput = {
   limit: number;
   cursor?: { name: string; id: string };
 };
+export type NearbySearchInput = {
+  latitude: number;
+  longitude: number;
+  radiusMeters: number;
+  category?: FacilityCategory;
+  limit: number;
+};
+export type NearbyPage = { items: NearbyFacility[]; truncated: boolean };
 
 export interface PublicFacilityRepository {
   list(input: FacilityListInput): Promise<Page<PublicFacility>>;
   getById(id: string): Promise<PublicFacility | null>;
   search(input: SearchInput): Promise<Page<PublicFacility>>;
+  nearby(input: NearbySearchInput): Promise<NearbyPage>;
   countPublished(): Promise<number>;
 }

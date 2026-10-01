@@ -1,6 +1,7 @@
 import type { PublicFacilityRepository } from "./types";
 import {
   parseFacilityQuery,
+  parseNearbyQuery,
   parseSearchQuery,
   parseUuid,
   ValidationError,
@@ -9,16 +10,16 @@ import {
 
 type ErrorBody = { data: null; meta: null; error: { code: string; message: string } };
 
-function json(body: unknown, status = 200): Response {
-  return Response.json(body, { status, headers: { "Cache-Control": "public, max-age=30, stale-while-revalidate=60" } });
+function json(body: unknown, status = 200, cacheControl = "public, max-age=30, stale-while-revalidate=60"): Response {
+  return Response.json(body, { status, headers: { "Cache-Control": cacheControl } });
 }
 
 function badRequest(error: ValidationError): Response {
   return json({ data: null, meta: null, error: { code: "INVALID_ARGUMENT", message: error.message } } satisfies ErrorBody, 400);
 }
 
-export function internalErrorResponse(): Response {
-  return json({ data: null, meta: null, error: { code: "INTERNAL_ERROR", message: "服务暂不可用" } } satisfies ErrorBody, 500);
+export function internalErrorResponse(cacheControl?: string): Response {
+  return json({ data: null, meta: null, error: { code: "INTERNAL_ERROR", message: "服务暂不可用" } } satisfies ErrorBody, 500, cacheControl);
 }
 
 export async function facilitiesHandler(request: Request, repository: PublicFacilityRepository): Promise<Response> {
@@ -55,6 +56,23 @@ export async function searchHandler(request: Request, repository: PublicFacility
   } catch (error) {
     if (error instanceof ValidationError) return badRequest(error);
     return internalErrorResponse();
+  }
+}
+
+export async function nearbyHandler(request: Request, repository: PublicFacilityRepository): Promise<Response> {
+  try {
+    const input = parseNearbyQuery(new URL(request.url));
+    const page = await repository.nearby(input);
+    return json({
+      data: page.items,
+      meta: { count: page.items.length, radiusMeters: input.radiusMeters, truncated: page.truncated },
+      error: null,
+    }, 200, "no-store");
+  } catch (error) {
+    if (error instanceof ValidationError) {
+      return json({ data: null, meta: null, error: { code: "INVALID_ARGUMENT", message: error.message } } satisfies ErrorBody, 400, "no-store");
+    }
+    return internalErrorResponse("no-store");
   }
 }
 

@@ -1,8 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { PublicFacility } from "../../lib/public-api/types";
-import type { FacilityMapController, Viewport } from "../../lib/map/map-adapter";
+import type { NearbyFacility, PublicFacility } from "../../lib/public-api/types";
+import type { FacilityMapController, MapLocation, Viewport } from "../../lib/map/map-adapter";
 import { MIN_FACILITY_DETAIL_ZOOM } from "../../lib/public-api/types";
 import { FacilityDetailPanel } from "./facility-detail-panel";
 import { FacilityList } from "./facility-list";
@@ -37,6 +37,12 @@ export function EyeHospitalsClient() {
   const [region, setRegion] = useState("");
   const [viewport, setViewport] = useState<ViewportState>(null);
   const [facilities, setFacilities] = useState<PublicFacility[]>([]);
+  const [userLocation, setUserLocation] = useState<MapLocation | null>(null);
+  const [nearbyFacilities, setNearbyFacilities] = useState<NearbyFacility[]>([]);
+  const [nearbyRadius, setNearbyRadius] = useState(10_000);
+  const [nearbyState, setNearbyState] = useState<"idle" | "loading" | "ready" | "empty" | "error">("idle");
+  const [nearbyTruncated, setNearbyTruncated] = useState(false);
+  const [nearbyRetry, setNearbyRetry] = useState(0);
   const [loadState, setLoadState] = useState<LoadState>("zoom");
   const [apiError, setApiError] = useState<string | null>(null);
   const [basemapError, setBasemapError] = useState(false);
@@ -50,6 +56,11 @@ export function EyeHospitalsClient() {
   const mapControllerRef = useRef<FacilityMapController | null>(null);
 
   const labels = useMemo(() => new Map(categories.map((item) => [item.id, item.label])), [categories]);
+  const mapFacilities = useMemo(() => {
+    const unique = new Map<string, PublicFacility>();
+    for (const facility of [...facilities, ...nearbyFacilities]) unique.set(facility.id, facility);
+    return [...unique.values()];
+  }, [facilities, nearbyFacilities]);
   const selectedForMap = useCallback((id: string) => {
     setSelectedId(id);
     setDetail(null);
@@ -72,6 +83,11 @@ export function EyeHospitalsClient() {
   }, []);
   const receiveController = useCallback((controller: FacilityMapController | null) => { mapControllerRef.current = controller; }, []);
   const mapError = useCallback(() => setBasemapError(true), []);
+  const located = useCallback((location: MapLocation) => {
+    setUserLocation(location);
+    mapControllerRef.current?.setUserLocation(location);
+    mapControllerRef.current?.flyTo(location.longitude, location.latitude);
+  }, []);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -170,6 +186,42 @@ export function EyeHospitalsClient() {
   }, [search, category, region]);
 
   useEffect(() => {
+    if (!userLocation) return;
+    const controller = new AbortController();
+    let current = true;
+    const params = new URLSearchParams({
+      lat: String(userLocation.latitude),
+      lng: String(userLocation.longitude),
+      radius: String(nearbyRadius),
+      limit: "50",
+    });
+    if (category) params.set("category", category);
+    void Promise.resolve().then(() => {
+      if (!current || controller.signal.aborted) return null;
+      setNearbyFacilities([]);
+      setNearbyState("loading");
+      return fetch(`/api/nearby?${params.toString()}`, { signal: controller.signal, cache: "no-store" });
+    }).then(async (response) => {
+      if (!response) return;
+      const payload = await readJson(response);
+      if (!response.ok) throw new Error("nearby");
+      const rows = Array.isArray(payload.data) ? payload.data as NearbyFacility[] : [];
+      const meta = payload.meta && typeof payload.meta === "object" ? payload.meta as { truncated?: unknown } : {};
+      if (current && !controller.signal.aborted) {
+        setNearbyFacilities(rows);
+        setNearbyTruncated(meta.truncated === true);
+        setNearbyState(rows.length ? "ready" : "empty");
+      }
+    }).catch(() => {
+      if (!current || controller.signal.aborted) return;
+      setNearbyFacilities([]);
+      setNearbyTruncated(false);
+      setNearbyState("error");
+    });
+    return () => { current = false; controller.abort(); };
+  }, [userLocation, nearbyRadius, category, nearbyRetry]);
+
+  useEffect(() => {
     if (!selectedId) return;
     const controller = new AbortController();
     let current = true;
@@ -255,7 +307,7 @@ export function EyeHospitalsClient() {
           <h1>全国眼科医疗资源地图</h1>
           <p className="eye-map__disclaimer">信息供查询，实际门诊与服务请以医院官方信息为准。</p>
         </div>
-        <LocationControl />
+        <LocationControl onLocated={located} />
       </header>
       <div className="eye-map__workspace">
         <aside className="eye-map__sidebar" aria-label="医院搜索与列表">
@@ -275,10 +327,30 @@ export function EyeHospitalsClient() {
             {loadState === "error" && <button type="button" onClick={() => { if (viewport) setViewport({ ...viewport }); }}>重新加载</button>}
           </div>
           <FacilityList facilities={facilities} selectedId={selectedId} labels={labels} onSelect={selectFacility} />
+          {userLocation && <section className="eye-map__nearby" aria-label="附近机构" aria-live="polite">
+            <div className="eye-map__nearby-heading">
+              <h2>附近机构</h2>
+              <label className="eye-map__radius">
+                <span>搜索半径</span>
+                <select aria-label="附近搜索半径" value={nearbyRadius} onChange={(event) => setNearbyRadius(Number(event.target.value))}>
+                  <option value={3000}>3 km</option>
+                  <option value={5000}>5 km</option>
+                  <option value={10000}>10 km</option>
+                  <option value={20000}>20 km</option>
+                  <option value={50000}>50 km</option>
+                </select>
+              </label>
+            </div>
+            {nearbyState === "loading" && <p role="status">正在加载附近机构…</p>}
+            {nearbyState === "empty" && <p role="status">附近 {nearbyRadius / 1000} 公里暂无已发布眼科医疗机构</p>}
+            {nearbyState === "error" && <p role="alert">附近机构加载失败，请稍后重试 <button type="button" onClick={() => setNearbyRetry((value) => value + 1)}>重试</button></p>}
+            {nearbyTruncated && <p role="status">附近机构较多，可缩小搜索半径</p>}
+            <FacilityList facilities={nearbyFacilities} selectedId={selectedId} labels={labels} onSelect={selectFacility} title="附近结果" />
+          </section>}
           <p className="eye-map__coverage-note">仅展示当前视窗已发布且可公开查询的机构。</p>
         </aside>
         <div className="eye-map__map-column">
-          <MapCanvas facilities={facilities} selectedId={selectedId} onController={receiveController} onViewport={changeViewport} onSelectFacility={selectedForMap} onClearSelection={clearSelection} onError={mapError} />
+          <MapCanvas facilities={mapFacilities} userLocation={userLocation} selectedId={selectedId} onController={receiveController} onViewport={changeViewport} onSelectFacility={selectedForMap} onClearSelection={clearSelection} onError={mapError} />
           <FacilityDetailPanel facility={detail} loading={detailLoading} error={detailError} labels={labels} onClose={clearSelection} />
         </div>
       </div>

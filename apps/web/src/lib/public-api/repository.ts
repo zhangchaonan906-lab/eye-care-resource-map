@@ -1,5 +1,5 @@
 import { Pool, type QueryResultRow } from "pg";
-import type { FacilityListInput, Page, PublicFacility, PublicFacilityRepository, SearchInput } from "./types";
+import type { FacilityListInput, NearbyFacility, NearbySearchInput, Page, PublicFacility, PublicFacilityRepository, SearchInput } from "./types";
 import { encodeCursor } from "./validation";
 
 type FacilityRow = QueryResultRow & {
@@ -17,6 +17,7 @@ type FacilityRow = QueryResultRow & {
   attribution: Array<{ name: string; url: string; updatedAt: string | null }>;
   last_verified_at: Date | string;
   normalized_name: string;
+  distance_meters?: number;
 };
 
 const SELECTION = `
@@ -84,6 +85,18 @@ export class PostgresPublicFacilityRepository implements PublicFacilityRepositor
       values,
     );
     return this.page(result.rows, input.limit, (row) => ({ kind: "search", name: row.normalized_name, id: row.id }));
+  }
+
+  async nearby(input: NearbySearchInput): Promise<{ items: NearbyFacility[]; truncated: boolean }> {
+    const result = await this.pool.query<FacilityRow & { distance_meters: number }>(
+      `SELECT * FROM public.query_published_facilities_nearby($1, $2, $3, $4, $5)`,
+      [input.latitude, input.longitude, input.radiusMeters, input.category ?? null, input.limit + 1],
+    );
+    const truncated = result.rows.length > input.limit;
+    return {
+      items: result.rows.slice(0, input.limit).map((row) => ({ ...mapFacility(row), distanceMeters: Number(row.distance_meters) })),
+      truncated,
+    };
   }
 
   async close(): Promise<void> {

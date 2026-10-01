@@ -6,6 +6,7 @@ const mapHarness = vi.hoisted(() => ({
   onViewport: undefined as undefined | ((viewport: { bbox: [number, number, number, number]; zoom: number }) => void),
   onSelect: undefined as undefined | ((id: string) => void),
   setFacilities: vi.fn(),
+  setUserLocation: vi.fn(),
   flyTo: vi.fn(),
 }));
 
@@ -15,6 +16,7 @@ vi.mock("../../lib/map/map-adapter", () => ({
     mapHarness.onSelect = callbacks.onSelectFacility;
     return {
       setFacilities: mapHarness.setFacilities,
+      setUserLocation: mapHarness.setUserLocation,
       flyTo: mapHarness.flyTo,
       destroy: vi.fn(),
     };
@@ -55,6 +57,7 @@ describe("EyeHospitalsClient", () => {
     mapHarness.onViewport = undefined;
     mapHarness.onSelect = undefined;
     mapHarness.setFacilities.mockClear();
+    mapHarness.setUserLocation.mockClear();
     mapHarness.flyTo.mockClear();
     vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
       const url = new URL(String(input), "http://localhost");
@@ -214,5 +217,149 @@ describe("EyeHospitalsClient", () => {
     viewport();
     fireEvent.click(await screen.findByRole("button", { name: /北京眼科测试医院/ }));
     expect(await screen.findByRole("alert")).toHaveTextContent("该机构详情暂不可用");
+  });
+
+  it("locates only after a user click, queries nearby without accuracy, and keeps the exact point out of browser storage", async () => {
+    const getCurrentPosition = vi.fn((success: PositionCallback) => success({
+      coords: { longitude: 116.4, latitude: 39.9, accuracy: 35 } as GeolocationCoordinates,
+      timestamp: Date.now(),
+    } as GeolocationPosition));
+    vi.stubGlobal("navigator", { ...navigator, geolocation: { getCurrentPosition, watchPosition: vi.fn() } });
+    const nearby = { ...facility, distanceMeters: 620 };
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+      const url = new URL(String(input), "http://localhost");
+      if (url.pathname === "/api/meta/categories") return categories();
+      if (url.pathname === "/api/nearby") return response({ data: [nearby], meta: { count: 1, radiusMeters: 10_000, truncated: true }, error: null });
+      if (url.pathname.endsWith(`/${facility.id}`)) return response({ data: facility, error: null });
+      return response({ data: [], meta: { nextCursor: null }, error: null });
+    }));
+    localStorage.clear();
+    sessionStorage.clear();
+    render(<EyeHospitalsClient />);
+    const locate = await screen.findByRole("button", { name: "定位到我" });
+    expect(getCurrentPosition).not.toHaveBeenCalled();
+    fireEvent.click(locate);
+    expect(getCurrentPosition).toHaveBeenCalledWith(expect.any(Function), expect.any(Function), {
+      enableHighAccuracy: false,
+      timeout: 10_000,
+      maximumAge: 300_000,
+    });
+    expect(await screen.findByText("620 m")).toBeInTheDocument();
+    expect(screen.getByText("附近机构较多，可缩小搜索半径")).toBeInTheDocument();
+    await waitFor(() => expect(mapHarness.setFacilities).toHaveBeenCalledWith([nearby], null));
+    await waitFor(() => expect(fetch).toHaveBeenCalledWith(expect.stringContaining("/api/nearby?"), expect.objectContaining({ signal: expect.any(AbortSignal) })));
+    const nearbyRequest = vi.mocked(fetch).mock.calls.find(([input]) => new URL(String(input), "http://localhost").pathname === "/api/nearby");
+    expect(nearbyRequest).toBeDefined();
+    const url = new URL(String(nearbyRequest?.[0]), "http://localhost");
+    expect(url.searchParams.get("lat")).toBe("39.9");
+    expect(url.searchParams.get("lng")).toBe("116.4");
+    expect(url.searchParams.has("accuracy")).toBe(false);
+    expect(mapHarness.setUserLocation).toHaveBeenCalledWith({ longitude: 116.4, latitude: 39.9 });
+    expect(mapHarness.flyTo).toHaveBeenCalledWith(116.4, 39.9);
+    expect(localStorage.length).toBe(0);
+    expect(sessionStorage.length).toBe(0);
+    expect(document.cookie).not.toContain("39.9");
+    fireEvent.click(screen.getByRole("button", { name: /北京眼科测试医院/ }));
+    expect(await screen.findByRole("dialog", { name: "北京眼科测试医院" })).toBeInTheDocument();
+  });
+
+  it("shows denied and retry guidance without requesting location again automatically", async () => {
+    const getCurrentPosition = vi.fn((_success: PositionCallback, error: PositionErrorCallback) => error({ code: 1, message: "denied" } as GeolocationPositionError));
+    vi.stubGlobal("navigator", { ...navigator, geolocation: { getCurrentPosition } });
+    render(<EyeHospitalsClient />);
+    fireEvent.click(await screen.findByRole("button", { name: "定位到我" }));
+    expect(await screen.findByText("定位权限未开启，你仍可以搜索或手动浏览地图。")).toBeInTheDocument();
+    expect(screen.getByText("可通过地区筛选或拖动地图继续浏览")).toBeInTheDocument();
+    expect(getCurrentPosition).toHaveBeenCalledTimes(1);
+    fireEvent.click(screen.getByRole("button", { name: "重新尝试定位" }));
+    expect(getCurrentPosition).toHaveBeenCalledTimes(2);
+  });
+
+  it("exposes the requesting state until the browser responds", async () => {
+    let complete: PositionCallback | undefined;
+    const getCurrentPosition = vi.fn((success: PositionCallback) => { complete = success; });
+    vi.stubGlobal("navigator", { ...navigator, geolocation: { getCurrentPosition } });
+    render(<EyeHospitalsClient />);
+    fireEvent.click(await screen.findByRole("button", { name: "定位到我" }));
+    expect(screen.getByRole("button", { name: "正在获取位置…" })).toBeDisabled();
+    complete?.({ coords: { longitude: 116.4, latitude: 39.9, accuracy: 50 } as GeolocationCoordinates, timestamp: Date.now() } as GeolocationPosition);
+    expect(await screen.findByRole("button", { name: "已定位" })).toBeEnabled();
+  });
+
+  it.each([
+    ["timeout", 3, "定位超时，请重试"],
+    ["unavailable", 2, "当前设备无法提供位置"],
+  ])("shows the %s state and leaves manual browsing available", async (_name, code, message) => {
+    const getCurrentPosition = vi.fn((_success: PositionCallback, error: PositionErrorCallback) => error({ code, message: "browser error" } as GeolocationPositionError));
+    vi.stubGlobal("navigator", { ...navigator, geolocation: { getCurrentPosition } });
+    render(<EyeHospitalsClient />);
+    fireEvent.click(await screen.findByRole("button", { name: "定位到我" }));
+    expect(await screen.findByText(message)).toBeInTheDocument();
+    expect(screen.getByText("可通过地区筛选或拖动地图继续浏览")).toBeInTheDocument();
+  });
+
+  it("reports unsupported geolocation while keeping the map browser usable", async () => {
+    vi.stubGlobal("navigator", { ...navigator, geolocation: undefined });
+    render(<EyeHospitalsClient />);
+    fireEvent.click(await screen.findByRole("button", { name: "定位到我" }));
+    expect(await screen.findByText("当前浏览器不支持定位")).toBeInTheDocument();
+    expect(screen.getByRole("combobox", { name: "机构类型" })).toBeEnabled();
+    expect(screen.getByText("可通过地区筛选或拖动地图继续浏览")).toBeInTheDocument();
+  });
+
+  it("requeries on radius and category changes and aborts each stale nearby request", async () => {
+    const getCurrentPosition = vi.fn((success: PositionCallback) => success({ coords: { longitude: 116.4, latitude: 39.9, accuracy: 20 } as GeolocationCoordinates, timestamp: Date.now() } as GeolocationPosition));
+    vi.stubGlobal("navigator", { ...navigator, geolocation: { getCurrentPosition } });
+    const signals: AbortSignal[] = [];
+    const urls: URL[] = [];
+    vi.stubGlobal("fetch", vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = new URL(String(input), "http://localhost");
+      if (url.pathname === "/api/meta/categories") return Promise.resolve(categories());
+      if (url.pathname === "/api/nearby") {
+        urls.push(url);
+        const signal = init?.signal as AbortSignal;
+        signals.push(signal);
+        return new Promise<Response>((_resolve, reject) => signal.addEventListener("abort", () => reject(new DOMException("Aborted", "AbortError")), { once: true }));
+      }
+      return Promise.resolve(response({ data: [], meta: { nextCursor: null }, error: null }));
+    }));
+    render(<EyeHospitalsClient />);
+    fireEvent.click(await screen.findByRole("button", { name: "定位到我" }));
+    await waitFor(() => expect(signals).toHaveLength(1));
+    expect(urls[0].searchParams.get("radius")).toBe("10000");
+    fireEvent.change(screen.getByRole("combobox", { name: "附近搜索半径" }), { target: { value: "5000" } });
+    await waitFor(() => expect(signals).toHaveLength(2));
+    expect(signals[0].aborted).toBe(true);
+    expect(urls[1].searchParams.get("radius")).toBe("5000");
+    fireEvent.change(screen.getByRole("combobox", { name: "机构类型" }), { target: { value: "eye_specialty_hospital" } });
+    await waitFor(() => expect(signals).toHaveLength(3));
+    expect(signals[1].aborted).toBe(true);
+    expect(urls[2].searchParams.get("category")).toBe("eye_specialty_hospital");
+  });
+
+  it("shows distinct empty and nearby API failure states without replacing the viewport browser", async () => {
+    const getCurrentPosition = vi.fn((success: PositionCallback) => success({ coords: { longitude: 116.4, latitude: 39.9, accuracy: 25 } as GeolocationCoordinates, timestamp: Date.now() } as GeolocationPosition));
+    vi.stubGlobal("navigator", { ...navigator, geolocation: { getCurrentPosition } });
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+      const url = new URL(String(input), "http://localhost");
+      if (url.pathname === "/api/meta/categories") return categories();
+      if (url.pathname === "/api/nearby") return response({ data: [], meta: { count: 0, radiusMeters: 10_000, truncated: false }, error: null });
+      return response({ data: [], meta: { nextCursor: null }, error: null });
+    }));
+    render(<EyeHospitalsClient />);
+    fireEvent.click(await screen.findByRole("button", { name: "定位到我" }));
+    expect(await screen.findByText("附近 10 公里暂无已发布眼科医疗机构")).toBeInTheDocument();
+    expect(screen.getByRole("combobox", { name: "机构类型" })).toBeEnabled();
+
+    vi.mocked(fetch).mockImplementation(async (input) => {
+      const url = new URL(String(input), "http://localhost");
+      if (url.pathname === "/api/meta/categories") return categories();
+      if (url.pathname === "/api/nearby") return response({ error: { code: "INTERNAL_ERROR" } }, 500);
+      return response({ data: [], meta: { nextCursor: null }, error: null });
+    });
+    fireEvent.change(screen.getByRole("combobox", { name: "附近搜索半径" }), { target: { value: "5000" } });
+    expect(await screen.findByRole("alert")).toHaveTextContent("附近机构加载失败，请稍后重试");
+    expect(screen.getByRole("combobox", { name: "机构类型" })).toBeEnabled();
+    expect(screen.getByRole("combobox", { name: "附近搜索半径" })).toBeEnabled();
   });
 });
