@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from collections.abc import Iterator
+from contextlib import contextmanager
 from typing import Any
 
 import psycopg
@@ -7,7 +9,12 @@ from psycopg.rows import tuple_row
 from psycopg.types.json import Jsonb
 
 from eye_collector.etl.matching import duplicate_fingerprint, duplicate_reason
-from eye_collector.etl.models import NormalizedRecord, OphthalmologyEvidence
+from eye_collector.etl.models import (
+    FacilityTarget,
+    NormalizedRecord,
+    OphthalmologyEvidence,
+    SourceSnapshot,
+)
 
 _PIPELINE_VERSION = "p3.1"
 _EVIDENCE_RULE_VERSION = "ophthalmology-explicit-fields-v1"
@@ -26,6 +33,122 @@ class ETLRepository:
     def close(self) -> None:
         self._connection.close()
 
+    @contextmanager
+    def atomic(self) -> Iterator[None]:
+        with self._connection.transaction():
+            yield
+
+    def fetch_pending(self, limit: int | None = None) -> list[SourceSnapshot]:
+        if limit is not None and limit < 1:
+            raise ValueError("limit must be a positive integer")
+        rows = self._connection.execute(
+            """
+            SELECT sr.id::text, sr.raw_payload, sc.registration_id_reliable
+            FROM app_private.source_records sr
+            JOIN app_private.source_catalog sc ON sc.id = sr.source_id
+            WHERE sc.status = 'approved'
+              AND sc.access_policy = 'automated_access_allowed'
+              AND NOT EXISTS (
+                SELECT 1 FROM app_private.candidate_records cr
+                WHERE cr.source_record_id = sr.id
+              )
+            ORDER BY sr.collected_at, sr.id
+            LIMIT %s
+            """,
+            (limit,),
+        ).fetchall()
+        return [
+            SourceSnapshot(str(row[0]), row[1], bool(row[2]))
+            for row in rows
+        ]
+
+    def count_existing_candidates(self) -> int:
+        row = self._connection.execute(
+            """
+            SELECT count(*)
+            FROM app_private.source_records sr
+            JOIN app_private.source_catalog sc ON sc.id = sr.source_id
+            JOIN app_private.candidate_records cr ON cr.source_record_id = sr.id
+            WHERE sc.status = 'approved'
+              AND sc.access_policy = 'automated_access_allowed'
+            """
+        ).fetchone()
+        return int(row[0]) if row is not None else 0
+
+    def facility_targets(self) -> list[FacilityTarget]:
+        rows = self._connection.execute(
+            """
+            SELECT f.id::text, f.name, f.campus_name, r.adcode, o.registration_id
+            FROM app_private.facilities f
+            JOIN app_private.regions r ON r.id = f.region_id
+            LEFT JOIN app_private.organizations o ON o.id = f.organization_id
+            WHERE f.verification_status <> 'withdrawn'
+            ORDER BY f.id
+            """
+        ).fetchall()
+        return [
+            FacilityTarget(
+                facility_id=str(row[0]),
+                name=str(row[1]),
+                campus_name=str(row[2]) if row[2] is not None else None,
+                administrative_code=str(row[3]),
+                registration_id=str(row[4]) if row[4] is not None else None,
+            )
+            for row in rows
+        ]
+
+    def find_duplicate_candidate_ids(
+        self, key: tuple[str, ...], *, exclude_candidate_id: str
+    ) -> list[str]:
+        if key[0] == "registration_id" and len(key) == 3:
+            rows = self._connection.execute(
+                """
+                SELECT id::text FROM app_private.candidate_records
+                WHERE registration_id_reliable
+                  AND registration_id = %s
+                  AND campus_name IS NOT DISTINCT FROM NULLIF(%s, '')
+                  AND match_status <> 'rejected'
+                  AND id <> %s
+                ORDER BY id
+                """,
+                (key[1], key[2], exclude_candidate_id),
+            ).fetchall()
+        elif key[0] == "name_region_campus" and len(key) == 4:
+            rows = self._connection.execute(
+                """
+                SELECT id::text FROM app_private.candidate_records
+                WHERE normalized_name = %s
+                  AND administrative_code = %s
+                  AND campus_name IS NOT DISTINCT FROM NULLIF(%s, '')
+                  AND match_status <> 'rejected'
+                  AND id <> %s
+                ORDER BY id
+                """,
+                (key[1], key[2], key[3], exclude_candidate_id),
+            ).fetchall()
+        else:
+            raise ValueError("invalid deterministic duplicate key")
+        return [str(row[0]) for row in rows]
+
+    def update_match(
+        self, candidate_id: str, status: str, facility_id: str | None
+    ) -> None:
+        if status not in {"matched", "unmatched", "needs_review"}:
+            raise ValueError("invalid deterministic match status")
+        if (status == "matched") != (facility_id is not None):
+            raise ValueError("only matched candidates may have a proposed facility")
+        row = self._connection.execute(
+            """
+            UPDATE app_private.candidate_records
+            SET match_status = %s, proposed_facility_id = %s
+            WHERE id = %s AND match_status <> 'rejected'
+            RETURNING id
+            """,
+            (status, facility_id, candidate_id),
+        ).fetchone()
+        if row is None:
+            raise RuntimeError("candidate was missing or rejected before matching")
+
     def insert_candidate(
         self,
         normalized: NormalizedRecord,
@@ -36,8 +159,8 @@ class ETLRepository:
             "address": normalized.original_address,
             "phone": normalized.original_phone,
             "administrative_code": normalized.administrative_code,
-            "registration_id": normalized.registration_id,
-            "campus_name": normalized.campus_name,
+            "registration_id": normalized.raw_payload.get("registration_id"),
+            "campus_name": normalized.raw_payload.get("campus_name"),
             "ophthalmology_evidence_present": bool(evidence),
         }
         with self._connection.transaction():
