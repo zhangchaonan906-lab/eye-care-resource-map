@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import date, datetime
+from pathlib import PurePosixPath
 from typing import Any, Literal
 
 
@@ -28,6 +29,9 @@ class FileImportProvenance:
     obtained_at: datetime
     operator: str
     acquisition_method: Literal["official_portal_manual_download"]
+    member_name: str | None = None
+    member_sha256: str | None = None
+    member_size_bytes: int | None = None
 
     def __post_init__(self) -> None:
         if (
@@ -47,6 +51,29 @@ class FileImportProvenance:
             raise ValueError("obtained_at must include a timezone offset")
         if not self.operator.strip():
             raise ValueError("operator must not be empty")
+        member_values = (self.member_name, self.member_sha256, self.member_size_bytes)
+        if any(value is not None for value in member_values):
+            if any(value is None for value in member_values):
+                raise ValueError("archive member provenance must be complete")
+            assert self.member_name is not None
+            assert self.member_sha256 is not None
+            assert self.member_size_bytes is not None
+            member_path = PurePosixPath(self.member_name)
+            if (
+                not self.member_name
+                or "\\" in self.member_name
+                or ":" in self.member_name.split("/", 1)[0]
+                or member_path.is_absolute()
+                or any(part in {".", ".."} for part in member_path.parts)
+                or member_path.suffix.lower() != ".xlsx"
+            ):
+                raise ValueError("archive member name must be an XLSX basename")
+            if len(self.member_sha256) != 64 or any(
+                char not in "0123456789abcdef" for char in self.member_sha256
+            ):
+                raise ValueError("member_sha256 must be a lowercase SHA-256 hex digest")
+            if not 1 <= self.member_size_bytes <= 10 * 1024 * 1024:
+                raise ValueError("member_size_bytes must be between 1 and 10 MiB")
 
 
 @dataclass(frozen=True, slots=True)

@@ -2,9 +2,14 @@ from __future__ import annotations
 
 import csv
 import hashlib
+import io
+import re
+import stat
+import warnings
+import zipfile
 from collections.abc import Callable, Iterator, Sequence
 from dataclasses import dataclass
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any
 
 from eye_collector.hashing import canonical_sha256
@@ -12,6 +17,7 @@ from eye_collector.models import RawRecord, SourceDescriptor, SourcePage
 from eye_collector.sources.base import SourceAdapter
 
 _MAX_FILE_BYTES = 10 * 1024 * 1024
+_MAX_ARCHIVE_MEMBER_BYTES = 10 * 1024 * 1024
 _MAX_RECORDS_PER_RUN = 150
 
 
@@ -25,6 +31,76 @@ class OpenDataFileInspection:
     row_count: int
     expected_schema: tuple[str, ...]
     schema_match: bool
+    container_format: str | None = None
+    archive_member_name: str | None = None
+    archive_member_sha256: str | None = None
+    archive_member_size_bytes: int | None = None
+    validation_errors: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True, slots=True)
+class _ArchiveMember:
+    name: str
+    content: bytes
+
+
+def _zip_xlsx_member(path: Path, dataset: OpenDataDataset) -> _ArchiveMember:
+    if not dataset.allow_zip_xlsx:
+        raise ValueError("ZIP input is not approved for this dataset")
+    try:
+        with zipfile.ZipFile(path, "r") as archive:
+            members = archive.infolist()
+            if len(members) != 1:
+                raise ValueError("ZIP must contain exactly one data file")
+            member = members[0]
+            if member.flag_bits & 0x1:
+                raise ValueError("encrypted ZIP members are not supported")
+            member_path = PurePosixPath(member.filename)
+            mode = member.external_attr >> 16
+            if (
+                not member.filename
+                or member.filename.startswith(("/", "\\"))
+                or "\\" in member.filename
+                or ":" in member.filename.split("/", 1)[0]
+                or "\x00" in member.filename
+                or member_path.is_absolute()
+                or any(part in {".", ".."} for part in member_path.parts)
+                or member.is_dir()
+                or stat.S_ISLNK(mode)
+                or mode & 0o111
+            ):
+                raise ValueError("ZIP contains an unsafe path or executable member")
+            if member_path.suffix.lower() != ".xlsx":
+                raise ValueError("ZIP must contain one XLSX data file")
+            if member.file_size < 1 or member.file_size > _MAX_ARCHIVE_MEMBER_BYTES:
+                raise ValueError("ZIP XLSX member must be no larger than 10 MiB")
+            with archive.open(member, "r") as member_stream:
+                content = member_stream.read(_MAX_ARCHIVE_MEMBER_BYTES + 1)
+            if len(content) > _MAX_ARCHIVE_MEMBER_BYTES:
+                raise ValueError("ZIP XLSX member must be no larger than 10 MiB")
+            if len(content) != member.file_size:
+                raise ValueError("ZIP member size does not match its directory entry")
+            return _ArchiveMember(member.filename, content)
+    except (zipfile.BadZipFile, OSError, RuntimeError) as error:
+        raise ValueError("invalid or unreadable ZIP archive") from error
+
+
+def _mapped_values_valid(
+    headers: Sequence[str], row: Sequence[object], dataset: OpenDataDataset, row_number: int
+) -> tuple[str, ...]:
+    administrative_header = next(
+        (header for header, target in dataset.field_mapping if target == "administrative_code"),
+        None,
+    )
+    if administrative_header is None or administrative_header not in headers:
+        return ()
+    value = row[headers.index(administrative_header)]
+    text = _string_value(value)
+    if text is not None and re.fullmatch(r"[0-9]{6}", text) is None:
+        return (
+            f"row {row_number}: {administrative_header} must be a six-digit administrative code",
+        )
+    return ()
 
 
 def inspect_open_data_file(path: str | Path, dataset: OpenDataDataset) -> OpenDataFileInspection:
@@ -42,7 +118,13 @@ def inspect_open_data_file(path: str | Path, dataset: OpenDataDataset) -> OpenDa
     suffix = source_path.suffix.lower()
     with source_path.open("rb") as stream:
         signature = stream.read(8)
-    if suffix == ".xlsx" and signature.startswith(b"PK\x03\x04"):
+    archive_member: _ArchiveMember | None = None
+    container_format: str | None = None
+    if suffix == ".zip":
+        archive_member = _zip_xlsx_member(source_path, dataset)
+        detected_format = "zip"
+        container_format = "zip"
+    elif suffix == ".xlsx" and signature.startswith(b"PK\x03\x04"):
         detected_format = "xlsx"
     elif suffix == ".xls" and signature.startswith(bytes.fromhex("D0CF11E0A1B11AE1")):
         detected_format = "xls"
@@ -53,12 +135,17 @@ def inspect_open_data_file(path: str | Path, dataset: OpenDataDataset) -> OpenDa
     else:
         raise ValueError("file extension and detected format do not match")
 
+    inspection_source: str | Path | io.BytesIO = (
+        io.BytesIO(archive_member.content) if archive_member else source_path
+    )
     if detected_format == "csv":
-        headers, row_count, widths_match = _inspect_csv(source_path)
-    elif detected_format == "xlsx":
-        headers, row_count, widths_match = _inspect_xlsx(source_path)
+        headers, row_count, widths_match, validation_errors = _inspect_csv(source_path, dataset)
+    elif detected_format in {"xlsx", "zip"}:
+        headers, row_count, widths_match, validation_errors = _inspect_xlsx(
+            inspection_source, dataset
+        )
     else:
-        headers, row_count, widths_match = _inspect_xls(source_path)
+        headers, row_count, widths_match, validation_errors = _inspect_xls(source_path, dataset)
 
     after = source_path.stat()
     if (
@@ -78,7 +165,14 @@ def inspect_open_data_file(path: str | Path, dataset: OpenDataDataset) -> OpenDa
         headers=headers,
         row_count=row_count,
         expected_schema=dataset.expected_headers,
-        schema_match=header_set_matches and widths_match,
+        schema_match=header_set_matches and widths_match and not validation_errors,
+        container_format=container_format,
+        archive_member_name=archive_member.name if archive_member else None,
+        archive_member_sha256=(
+            hashlib.sha256(archive_member.content).hexdigest() if archive_member else None
+        ),
+        archive_member_size_bytes=len(archive_member.content) if archive_member else None,
+        validation_errors=validation_errors,
     )
 
 
@@ -90,7 +184,9 @@ def sha256_file(path: str | Path) -> str:
     return digest.hexdigest()
 
 
-def _inspect_csv(path: Path) -> tuple[tuple[str, ...], int, bool]:
+def _inspect_csv(
+    path: Path, dataset: OpenDataDataset
+) -> tuple[tuple[str, ...], int, bool, tuple[str, ...]]:
     with path.open("r", encoding="utf-8-sig", newline="") as stream:
         reader = csv.reader(stream)
         raw_headers = next(reader, None)
@@ -99,53 +195,91 @@ def _inspect_csv(path: Path) -> tuple[tuple[str, ...], int, bool]:
         headers = tuple(raw_headers)
         row_count = 0
         widths_match = True
+        validation_errors: list[str] = []
         for row in reader:
             if not row or all(value == "" for value in row):
                 continue
             row_count += 1
             if len(row) != len(headers):
                 widths_match = False
-    return headers, row_count, widths_match
+            else:
+                validation_errors.extend(_mapped_values_valid(headers, row, dataset, row_count + 1))
+    return headers, row_count, widths_match, tuple(validation_errors)
 
 
-def _inspect_xlsx(path: Path) -> tuple[tuple[str, ...], int, bool]:
+def _inspect_xlsx(
+    source: str | Path | io.BytesIO, dataset: OpenDataDataset
+) -> tuple[tuple[str, ...], int, bool, tuple[str, ...]]:
     from openpyxl import load_workbook  # type: ignore[import-untyped]
 
-    workbook = load_workbook(path, read_only=True, data_only=True)
+    with warnings.catch_warnings():
+        warnings.filterwarnings(
+            "ignore",
+            message="Workbook contains no default style, apply openpyxl's default",
+            category=UserWarning,
+        )
+        workbook = load_workbook(source, read_only=False, data_only=True)
     try:
-        row_iter = workbook.active.iter_rows(values_only=True)
+        if dataset.data_sheet_name is not None:
+            if dataset.data_sheet_name not in workbook.sheetnames:
+                raise ValueError(f"configured worksheet {dataset.data_sheet_name!r} is missing")
+            sheet = workbook[dataset.data_sheet_name]
+        elif len(workbook.worksheets) == 1:
+            sheet = workbook.worksheets[0]
+        else:
+            raise ValueError("workbook has multiple sheets; a data_sheet_name is required")
+        row_iter = sheet.iter_rows(values_only=True)
         raw_headers = next(row_iter, None)
         if raw_headers is None:
             raise ValueError("source file header schema is missing")
         headers = tuple("" if value is None else str(value) for value in raw_headers)
         row_count = 0
         widths_match = True
+        validation_errors: list[str] = []
         for row in row_iter:
             if all(value is None or value == "" for value in row):
                 continue
             row_count += 1
             if len(row) != len(headers):
                 widths_match = False
-        return headers, row_count, widths_match
+            else:
+                validation_errors.extend(_mapped_values_valid(headers, row, dataset, row_count + 1))
+        return headers, row_count, widths_match, tuple(validation_errors)
     finally:
         workbook.close()
 
 
-def _inspect_xls(path: Path) -> tuple[tuple[str, ...], int, bool]:
+def _inspect_xls(
+    path: Path, dataset: OpenDataDataset
+) -> tuple[tuple[str, ...], int, bool, tuple[str, ...]]:
     import xlrd  # type: ignore[import-untyped]
 
     workbook = xlrd.open_workbook(path, on_demand=True)
     try:
-        sheet = workbook.sheet_by_index(0)
+        if dataset.data_sheet_name is not None:
+            try:
+                sheet = workbook.sheet_by_name(dataset.data_sheet_name)
+            except xlrd.biffh.XLRDError as error:
+                raise ValueError(
+                    f"configured worksheet {dataset.data_sheet_name!r} is missing"
+                ) from error
+        elif workbook.nsheets == 1:
+            sheet = workbook.sheet_by_index(0)
+        else:
+            raise ValueError("workbook has multiple sheets; a data_sheet_name is required")
         if sheet.nrows == 0:
             raise ValueError("source file header schema is missing")
         headers = tuple(str(value) for value in sheet.row_values(0))
         row_count = 0
+        validation_errors: list[str] = []
         for row_index in range(1, sheet.nrows):
             values = sheet.row_values(row_index)
             if any(value is not None and value != "" for value in values):
                 row_count += 1
-        return headers, row_count, True
+                validation_errors.extend(
+                    _mapped_values_valid(headers, values, dataset, row_index + 1)
+                )
+        return headers, row_count, True, tuple(validation_errors)
     finally:
         workbook.release_resources()
 
@@ -158,6 +292,8 @@ class OpenDataDataset:
     expected_headers: tuple[str, ...]
     field_mapping: tuple[tuple[str, str], ...]
     stable_key_header: str | None = None
+    data_sheet_name: str | None = None
+    allow_zip_xlsx: bool = False
 
     def __post_init__(self) -> None:
         raw_headers = [header for header, _canonical in self.field_mapping]
@@ -187,16 +323,28 @@ BEIJING_DESIGNATED_MEDICAL_INSTITUTIONS = OpenDataDataset(
     source_key="beijing-open-data-designated-medical-institutions",
     source_name="北京市公共数据开放平台-定点医疗机构信息",
     dataset_url="https://data.beijing.gov.cn/zyml/ajg/sybj/17425.htm",
-    expected_headers=("医院地址", "医院等级", "医院类别", "所属区", "定点医疗机构编码", "医院名称"),
+    expected_headers=(
+        "序号",
+        "医院名称",
+        "定点医疗机构编码",
+        "所属区",
+        "医院类别",
+        "医院等级",
+        "医院地址",
+        "数据唯一记录号",
+        "数据创建时间",
+        "数据更新时间",
+    ),
     field_mapping=(
         ("医院名称", "name"),
         ("医院地址", "address"),
-        ("所属区", "administrative_context"),
+        ("所属区", "administrative_code"),
         ("医院等级", "hospital_grade"),
         ("医院类别", "source_category"),
         ("定点医疗机构编码", "registration_id"),
     ),
     stable_key_header="定点医疗机构编码",
+    data_sheet_name="北京市医疗保障局-定点医疗机构信息",
 )
 
 SHENZHEN_BAOAN_HOSPITALS = OpenDataDataset(
@@ -204,35 +352,38 @@ SHENZHEN_BAOAN_HOSPITALS = OpenDataDataset(
     source_name="深圳市政府数据开放平台-宝安区-医院基本信息",
     dataset_url="https://opendata.sz.gov.cn/data/dataSet/toDataDetails/29200_02800636",
     expected_headers=(
-        "ID",
-        "NAME",
-        "LOCAL",
-        "MANAGER",
-        "ADDRESS",
-        "CODE",
-        "PHONE",
-        "EMAIL",
-        "WEBURL",
-        "PROPERTY",
-        "LEVELS",
-        "STEP",
-        "YESONO",
-        "HOSPITALDESC",
-        "HONOR",
-        "ADVANTAGE",
-        "TRAFFIC",
+        "文档ID",
+        "名称",
+        "所在区县",
+        "主管部门",
+        "详细地址",
+        "邮政编码",
+        "联系电话",
+        "电子邮箱",
+        "网站地址",
+        "性质",
+        "级别",
+        "等级",
+        "是否医保指定医院",
+        "医院简介",
+        "所获表彰与荣誉",
+        "医疗优势与特长",
+        "交通情况",
     ),
     field_mapping=(
-        ("ID", "source_reference_id"),
-        ("NAME", "name"),
-        ("LOCAL", "administrative_context"),
-        ("ADDRESS", "address"),
-        ("LEVELS", "hospital_level"),
-        ("STEP", "hospital_grade"),
-        ("PROPERTY", "source_category"),
-        ("ADVANTAGE", "specialties"),
+        ("文档ID", "source_reference_id"),
+        ("名称", "name"),
+        ("所在区县", "administrative_context"),
+        ("详细地址", "address"),
+        ("性质", "source_category"),
+        ("级别", "hospital_level"),
+        ("等级", "hospital_grade"),
+        ("医疗优势与特长", "specialties"),
+        ("医院简介", "hospital_description"),
     ),
-    stable_key_header="ID",
+    stable_key_header="文档ID",
+    data_sheet_name="数据集1",
+    allow_zip_xlsx=True,
 )
 
 
@@ -242,8 +393,11 @@ class OpenDataFileAdapter(SourceAdapter):
     def __init__(self, path: str | Path, dataset: OpenDataDataset) -> None:
         self._path = Path(path)
         self._dataset = dataset
-        if self._path.suffix.lower() not in {".csv", ".xls", ".xlsx"}:
-            raise ValueError("supported formats are CSV, XLS, and XLSX")
+        supported = {".csv", ".xls", ".xlsx"}
+        if dataset.allow_zip_xlsx:
+            supported.add(".zip")
+        if self._path.suffix.lower() not in supported:
+            raise ValueError("supported formats are CSV, XLS, XLSX, and approved ZIP")
         if not self._path.is_file():
             raise ValueError("source file does not exist")
         if self._path.stat().st_size > _MAX_FILE_BYTES:
@@ -251,6 +405,16 @@ class OpenDataFileAdapter(SourceAdapter):
         self.original_filename = self._path.name
         self.file_size_bytes = self._path.stat().st_size
         self.file_sha256 = sha256_file(self._path)
+        self.archive_member_name: str | None = None
+        self.archive_member_sha256: str | None = None
+        self.archive_member_size_bytes: int | None = None
+        self._archive_member_content: bytes | None = None
+        if self._path.suffix.lower() == ".zip":
+            member = _zip_xlsx_member(self._path, dataset)
+            self.archive_member_name = member.name
+            self.archive_member_sha256 = hashlib.sha256(member.content).hexdigest()
+            self.archive_member_size_bytes = len(member.content)
+            self._archive_member_content = member.content
 
     @property
     def descriptor(self) -> SourceDescriptor:
@@ -292,7 +456,7 @@ class OpenDataFileAdapter(SourceAdapter):
         suffix = self._path.suffix.lower()
         if suffix == ".csv":
             rows = self._read_csv(limit)
-        elif suffix == ".xlsx":
+        elif suffix in {".xlsx", ".zip"}:
             rows = self._read_xlsx(limit)
         else:
             rows = self._read_xls(limit)
@@ -304,6 +468,14 @@ class OpenDataFileAdapter(SourceAdapter):
             source_fields = {
                 header: _string_value(row[header]) for header, _name in self._dataset.field_mapping
             }
+            for source_header, canonical_name in self._dataset.field_mapping:
+                if canonical_name == "administrative_code":
+                    district_code = source_fields[source_header]
+                    if (
+                        district_code is not None
+                        and re.fullmatch(r"[0-9]{6}", district_code) is None
+                    ):
+                        raise ValueError(f"{source_header} must be a six-digit administrative code")
             mapped = {
                 canonical_name: source_fields[source_header]
                 for source_header, canonical_name in self._dataset.field_mapping
@@ -348,9 +520,29 @@ class OpenDataFileAdapter(SourceAdapter):
     def _read_xlsx(self, limit: int) -> list[dict[str, object]]:
         from openpyxl import load_workbook
 
-        workbook = load_workbook(self._path, read_only=True, data_only=True)
+        source: str | Path | io.BytesIO = (
+            io.BytesIO(self._archive_member_content)
+            if self._archive_member_content is not None
+            else self._path
+        )
+        with warnings.catch_warnings():
+            warnings.filterwarnings(
+                "ignore",
+                message="Workbook contains no default style, apply openpyxl's default",
+                category=UserWarning,
+            )
+            workbook = load_workbook(source, read_only=False, data_only=True)
         try:
-            sheet = workbook.active
+            if self._dataset.data_sheet_name is not None:
+                if self._dataset.data_sheet_name not in workbook.sheetnames:
+                    raise ValueError(
+                        f"configured worksheet {self._dataset.data_sheet_name!r} is missing"
+                    )
+                sheet = workbook[self._dataset.data_sheet_name]
+            elif len(workbook.worksheets) == 1:
+                sheet = workbook.worksheets[0]
+            else:
+                raise ValueError("workbook has multiple sheets; a data_sheet_name is required")
             row_iter = sheet.iter_rows(values_only=True)
             headers = next(row_iter, None)
             names = self._validate_headers(headers)
@@ -370,7 +562,17 @@ class OpenDataFileAdapter(SourceAdapter):
 
         workbook = xlrd.open_workbook(self._path, on_demand=True)
         try:
-            sheet = workbook.sheet_by_index(0)
+            if self._dataset.data_sheet_name is not None:
+                try:
+                    sheet = workbook.sheet_by_name(self._dataset.data_sheet_name)
+                except xlrd.biffh.XLRDError as error:
+                    raise ValueError(
+                        f"configured worksheet {self._dataset.data_sheet_name!r} is missing"
+                    ) from error
+            elif workbook.nsheets == 1:
+                sheet = workbook.sheet_by_index(0)
+            else:
+                raise ValueError("workbook has multiple sheets; a data_sheet_name is required")
             if sheet.nrows == 0:
                 raise ValueError("source file header schema is missing")
             headers = self._validate_headers(sheet.row_values(0))

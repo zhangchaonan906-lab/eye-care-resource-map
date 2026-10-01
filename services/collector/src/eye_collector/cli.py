@@ -76,9 +76,7 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument("--dry-run", action="store_true")
     run.add_argument("--fixture-revision", choices=("stable", "updated"), default="stable")
     run.add_argument("--operator")
-    run.add_argument(
-        "--obtained-at", help="official file acquisition time in ISO-8601 with offset"
-    )
+    run.add_argument("--obtained-at", help="official file acquisition time in ISO-8601 with offset")
     inspect = commands.add_parser("inspect-file", help="read-only official file preflight")
     inspect.add_argument("--source", required=True, choices=tuple(_OPEN_DATA_DATASETS))
     inspect.add_argument("--file", required=True, help="operator-downloaded official source file")
@@ -139,9 +137,7 @@ def _file_provenance(
     if not operator:
         raise ValueError("PILOT_OPERATOR or --operator is required for file provenance")
     if not obtained_raw:
-        raise ValueError(
-            "PILOT_FILE_OBTAINED_AT or --obtained-at is required for file provenance"
-        )
+        raise ValueError("PILOT_FILE_OBTAINED_AT or --obtained-at is required for file provenance")
     try:
         obtained_at = datetime.fromisoformat(obtained_raw.replace("Z", "+00:00"))
     except ValueError as error:
@@ -157,6 +153,9 @@ def _file_provenance(
         obtained_at=obtained_at,
         operator=operator,
         acquisition_method="official_portal_manual_download",
+        member_name=adapter.archive_member_name,
+        member_sha256=adapter.archive_member_sha256,
+        member_size_bytes=adapter.archive_member_size_bytes,
     )
 
 
@@ -191,8 +190,11 @@ def main(argv: Sequence[str] | None = None) -> int:
             remaining_capacity = (
                 max(configured_limit - current_count, 0) if configured_limit is not None else 0
             )
-            max_importable_records = min(
-                inspection.row_count, remaining_capacity, 150
+            max_importable_records = min(inspection.row_count, remaining_capacity, 150)
+            first_pilot_cap = (
+                50
+                if args.source == BEIJING_DESIGNATED_MEDICAL_INSTITUTIONS.source_key
+                else inspection.row_count
             )
             approved = bool(
                 registration is not None
@@ -200,11 +202,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 and registration.access_policy == "manual_only"
                 and registration.dataset_page == dataset.dataset_url
             )
-            ready = bool(
-                approved
-                and inspection.schema_match
-                and max_importable_records > 0
-            )
+            ready = bool(approved and inspection.schema_match and max_importable_records > 0)
             print(
                 json.dumps(
                     {
@@ -212,12 +210,16 @@ def main(argv: Sequence[str] | None = None) -> int:
                         "sha256": inspection.file_sha256,
                         "file_size_bytes": inspection.file_size_bytes,
                         "detected_format": inspection.detected_format,
+                        "container_format": inspection.container_format,
+                        "archive_member_name": inspection.archive_member_name,
+                        "archive_member_sha256": inspection.archive_member_sha256,
+                        "archive_member_size_bytes": inspection.archive_member_size_bytes,
                         "headers": list(inspection.headers),
+                        "data_sheet_name": dataset.data_sheet_name,
+                        "validation_errors": list(inspection.validation_errors),
                         "row_count": inspection.row_count,
                         "approved_dataset": dataset.source_name,
-                        "dataset_page": (
-                            registration.dataset_page if registration else None
-                        ),
+                        "dataset_page": (registration.dataset_page if registration else None),
                         "source_updated_at": (
                             registration.source_updated_at.isoformat()
                             if registration and registration.source_updated_at
@@ -231,6 +233,9 @@ def main(argv: Sequence[str] | None = None) -> int:
                         "remaining_pilot_capacity": remaining_capacity,
                         "max_records_per_run": 150,
                         "max_importable_records": max_importable_records,
+                        "recommended_first_pilot_limit": min(
+                            first_pilot_cap, max_importable_records
+                        ),
                         "allowed_region": allowed_region,
                         "ready_to_import": ready,
                     },

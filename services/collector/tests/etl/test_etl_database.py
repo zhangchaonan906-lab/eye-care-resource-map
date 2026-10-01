@@ -7,6 +7,7 @@ import pytest
 
 from eye_collector.etl.pipeline import Pipeline
 from eye_collector.etl.repository import ETLRepository
+from eye_collector.hashing import canonical_sha256
 
 pytestmark = pytest.mark.etl_database
 
@@ -85,8 +86,7 @@ def test_etl_pipeline_persists_traceable_candidates_and_is_idempotent(
         ).fetchall()
         assert len(raw_before) == 8
         published_before = admin.execute(
-            "SELECT count(*) FROM app_private.facilities "
-            "WHERE verification_status = 'published'"
+            "SELECT count(*) FROM app_private.facilities WHERE verification_status = 'published'"
         ).fetchone()[0]
 
     repository = ETLRepository.connect(etl_url)
@@ -136,9 +136,7 @@ def test_etl_pipeline_persists_traceable_candidates_and_is_idempotent(
             if row[1] == "\u6837\u4f8b\u95e8\u8bca" or "\u4e1c\u9662" in row[1]
         )
         assert any(
-            row[2] == "matched"
-            and row[3] is not None
-            and row[4] == "\u6837\u4f8b\u4e2d\u5fc3"
+            row[2] == "matched" and row[3] is not None and row[4] == "\u6837\u4f8b\u4e2d\u5fc3"
             for row in candidates
         )
         assert any(
@@ -146,8 +144,7 @@ def test_etl_pipeline_persists_traceable_candidates_and_is_idempotent(
             for row in candidates
         )
         assert not any(
-            row[1] == "\u6837\u4f8b\u773c\u79d1\u533b\u9662" and row[6] > 0
-            for row in candidates
+            row[1] == "\u6837\u4f8b\u773c\u79d1\u533b\u9662" and row[6] > 0 for row in candidates
         )
         raw_after = admin.execute(
             """
@@ -159,9 +156,13 @@ def test_etl_pipeline_persists_traceable_candidates_and_is_idempotent(
             """
         ).fetchall()
         assert raw_after == raw_before
-        assert admin.execute(
-            "SELECT count(*) FROM app_private.facilities WHERE verification_status = 'published'"
-        ).fetchone()[0] == published_before
+        assert (
+            admin.execute(
+                "SELECT count(*) FROM app_private.facilities "
+                "WHERE verification_status = 'published'"
+            ).fetchone()[0]
+            == published_before
+        )
         duplicate_sizes = admin.execute(
             """
             SELECT count(*) FROM app_private.duplicate_case_candidates dcc
@@ -183,3 +184,117 @@ def test_etl_pipeline_persists_traceable_candidates_and_is_idempotent(
                 VALUES ('synthetic singleton rejection', 'synthetic-singleton-rejection')
                 """
             )
+
+
+def test_p5_placeholder_evidence_and_duplicate_snapshots_stay_in_review_staging(caplog) -> None:
+    admin_url = _url("DATABASE_ADMIN_URL")
+    etl_url = _url("ETL_DATABASE_URL")
+    payloads = (
+        ("placeholder-row", {"name": "-", "source_fields": {"名称": "-"}}),
+        (
+            "baoan-copy-a",
+            {
+                "name": "Synthetic Baoan Hospital",
+                "administrative_context": "宝安区",
+                "address": "Synthetic Road 1",
+                "source_fields": {"名称": "Synthetic Baoan Hospital"},
+                "hospital_description": "医院配有眼底成像设备。",
+            },
+        ),
+        (
+            "baoan-copy-b",
+            {
+                "name": "Synthetic Baoan Hospital",
+                "administrative_context": "宝安区",
+                "address": "Synthetic Road 1",
+                "source_fields": {"名称": "Synthetic Baoan Hospital"},
+                "hospital_description": "设有眼科门诊。",
+            },
+        ),
+    )
+    with psycopg.connect(admin_url, autocommit=True) as admin:
+        source_id, source_url = admin.execute(
+            "SELECT id, url FROM app_private.source_catalog WHERE name = 'Fixture Directory'"
+        ).fetchone()
+        source_record_ids: dict[str, str] = {}
+        for source_key, payload in payloads:
+            run_id = admin.execute(
+                """
+                INSERT INTO app_private.import_runs (source_id, region_code, status)
+                VALUES (%s, '440306', 'running') RETURNING id
+                """,
+                (source_id,),
+            ).fetchone()[0]
+            source_record_ids[source_key] = str(
+                admin.execute(
+                    """
+                    INSERT INTO app_private.source_records (
+                      source_id, source_key, raw_payload, source_url, content_hash, import_run_id
+                    ) VALUES (%s, %s, %s, %s, %s, %s) RETURNING id::text
+                    """,
+                    (
+                        source_id,
+                        source_key,
+                        psycopg.types.json.Jsonb(payload),
+                        source_url,
+                        canonical_sha256(payload),
+                        run_id,
+                    ),
+                ).fetchone()[0]
+            )
+        raw_before = admin.execute(
+            "SELECT id::text, raw_payload FROM app_private.source_records "
+            "WHERE id = ANY(%s::uuid[])",
+            ([value for value in source_record_ids.values()],),
+        ).fetchall()
+
+    repository = ETLRepository.connect(etl_url)
+    try:
+        stats = Pipeline(repository).run()
+    finally:
+        repository.close()
+
+    assert stats.errors == 0, [
+        (record.__dict__.get("error_type"), record.__dict__.get("error"))
+        for record in caplog.records
+        if record.__dict__.get("event") == "etl_record_failed"
+    ]
+
+    with psycopg.connect(admin_url, autocommit=True) as admin:
+        raw_after = admin.execute(
+            "SELECT id::text, raw_payload FROM app_private.source_records "
+            "WHERE id = ANY(%s::uuid[])",
+            ([value for value in source_record_ids.values()],),
+        ).fetchall()
+        placeholder = admin.execute(
+            """
+            SELECT disposition, reason_code FROM app_private.etl_source_dispositions
+            WHERE source_record_id = %s AND pipeline_version = 'p3.3'
+            """,
+            (source_record_ids["placeholder-row"],),
+        ).fetchone()
+        placeholder_candidates = admin.execute(
+            "SELECT count(*) FROM app_private.candidate_records WHERE source_record_id = %s",
+            (source_record_ids["placeholder-row"],),
+        ).fetchone()[0]
+        evidence = admin.execute(
+            """
+            SELECT field_name, evidence_text FROM app_private.candidate_evidence
+            WHERE source_record_id = %s
+            """,
+            (source_record_ids["baoan-copy-b"],),
+        ).fetchone()
+        duplicate_count = admin.execute(
+            """
+            SELECT count(*) FROM app_private.duplicate_case_candidates dcc
+            JOIN app_private.candidate_records cr ON cr.id = dcc.candidate_record_id
+            WHERE cr.source_record_id = ANY(%s::uuid[])
+            """,
+            ([source_record_ids["baoan-copy-a"], source_record_ids["baoan-copy-b"]],),
+        ).fetchone()[0]
+
+    assert sorted(raw_before) == sorted(raw_after)
+    assert placeholder == ("terminal_skip", "invalid_name_placeholder")
+    assert placeholder_candidates == 0
+    assert evidence == ("hospital_description", "设有眼科门诊。")
+    assert duplicate_count == 2

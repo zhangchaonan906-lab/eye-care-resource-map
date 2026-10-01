@@ -106,12 +106,16 @@ def duplicate_key(candidate: NormalizedRecord) -> tuple[str, ...] | None:
             candidate.administrative_code,
             campus,
         )
+    if candidate.normalized_name:
+        return "name_only", candidate.normalized_name, campus
     return None
 
 
 def duplicate_reason(key: tuple[str, ...]) -> str:
     if key[0] == "registration_id":
         return "same_reliable_registration_id_and_campus"
+    if key[0] == "name_only":
+        return "same_normalized_name_needs_review"
     return "same_normalized_name_region_and_campus"
 
 

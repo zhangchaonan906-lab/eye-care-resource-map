@@ -104,10 +104,11 @@ class PostgresRepository:
                     INSERT INTO app_private.import_runs (
                       source_id, region_code, status, file_original_filename,
                       file_sha256, file_size_bytes, file_obtained_at, file_dataset_page,
-                      file_source_updated_at, file_operator, file_acquisition_method
+                      file_source_updated_at, file_operator, file_acquisition_method,
+                      file_member_name, file_member_sha256, file_member_size_bytes
                     )
                     SELECT id, %s, 'running', %s, %s, %s, %s, dataset_page,
-                           source_updated_at, %s, %s
+                           source_updated_at, %s, %s, %s, %s, %s
                     FROM app_private.source_catalog
                     WHERE id = %s AND status = 'approved'
                     RETURNING id::text
@@ -120,6 +121,9 @@ class PostgresRepository:
                         provenance.obtained_at,
                         provenance.operator,
                         provenance.acquisition_method,
+                        provenance.member_name,
+                        provenance.member_sha256,
+                        provenance.member_size_bytes,
                         registration.id,
                     ),
                 ).fetchone()

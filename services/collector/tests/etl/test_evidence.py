@@ -74,3 +74,33 @@ def test_unrelated_fields_and_nonmatching_department_values_are_ignored() -> Non
 
     assert result.evidence == ()
     assert result.status == "unknown"
+
+
+def test_hospital_description_requires_explicit_ophthalmology_text() -> None:
+    result = extract_ophthalmology_evidence(
+        record(
+            {
+                "hospital_description": "医院设有眼科门诊，配有相关检查设备。",
+                "name": "综合医院",
+            }
+        )
+    )
+
+    assert result.status == "evidence_found"
+    assert [(item.field_name, item.evidence_text) for item in result.evidence] == [
+        ("hospital_description", "医院设有眼科门诊，配有相关检查设备。")
+    ]
+
+
+def test_hospital_description_without_explicit_eye_clinic_text_is_unknown() -> None:
+    result = extract_ophthalmology_evidence(
+        record(
+            {
+                "hospital_description": "医院配有眼底照相设备。",
+                "name": "综合医院",
+            }
+        )
+    )
+
+    assert result.evidence == ()
+    assert result.status == "unknown"

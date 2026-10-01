@@ -15,6 +15,7 @@ _EVIDENCE_FIELDS = (
     "departments",
     "department_text",
     "specialties",
+    "hospital_description",
 )
 
 

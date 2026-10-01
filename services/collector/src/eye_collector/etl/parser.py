@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import re
+import unicodedata
 from collections.abc import Mapping
 
 from eye_collector.etl.models import ParsedRecord, ParseResult
 
 _ADMINISTRATIVE_CODE = re.compile(r"^[0-9]{6}$")
+_PLACEHOLDER_NAMES = {"-", "—"}
 
 
 def _optional_text(payload: Mapping[str, object], key: str) -> str | None:
@@ -23,6 +25,8 @@ def parse_snapshot(
     name = raw_payload.get("name")
     if not isinstance(name, str) or not name.strip():
         return ParseResult(record=None, skip_reason="missing_name")
+    if unicodedata.normalize("NFKC", name).strip() in _PLACEHOLDER_NAMES:
+        return ParseResult(record=None, skip_reason="invalid_name_placeholder")
 
     administrative_code = _optional_text(raw_payload, "administrative_code")
     if administrative_code is None:

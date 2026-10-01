@@ -39,6 +39,10 @@ try {
   if ($LASTEXITCODE -ne 0) { throw 'P5 source file provenance migration failed.' }
   docker compose -p $projectName exec -T db psql -U eye -d eye -f /workspace/scripts/seed-opendata-sources.sql
   if ($LASTEXITCODE -ne 0) { throw 'Could not seed the qualified official open-data sources.' }
+  docker compose -p $projectName exec -T db psql -U eye -d eye -v ON_ERROR_STOP=1 -f /workspace/db/tests/009_real_export_compatibility_before.sql
+  if ($LASTEXITCODE -ne 0) { throw 'P5 pre-migration source permission check failed.' }
+  docker compose -p $projectName exec -T db psql -U eye -d eye -v ON_ERROR_STOP=1 -f /workspace/db/migrations/009_real_export_compatibility.sql
+  if ($LASTEXITCODE -ne 0) { throw 'P5 real export compatibility migration failed.' }
   $testFiles = @(
     '/workspace/db/tests/001_core.sql',
     '/workspace/db/tests/002_evidence_location.sql',
@@ -46,7 +50,8 @@ try {
     '/workspace/db/tests/004_collector_permissions.sql',
     '/workspace/db/tests/005_etl_candidates.sql',
     '/workspace/db/tests/006_geocoding.sql',
-    '/workspace/db/tests/007_source_open_data_rights.sql'
+    '/workspace/db/tests/007_source_open_data_rights.sql',
+    '/workspace/db/tests/009_real_export_compatibility.sql'
   )
   foreach ($sqlFile in $testFiles) {
     docker compose -p $projectName exec -T db psql -U eye -d eye -v ON_ERROR_STOP=1 -f $sqlFile
@@ -85,6 +90,25 @@ try {
     }
     py -m pytest -m geocode_database -q
     if ($LASTEXITCODE -ne 0) { throw 'P4 geocoding database integration tests failed.' }
+    if ($env:P5_BEIJING_OFFICIAL_FILE -and $env:P5_SHENZHEN_OFFICIAL_FILE) {
+      $previousPythonIoEncoding = [Environment]::GetEnvironmentVariable('PYTHONIOENCODING', 'Process')
+      $env:PYTHONIOENCODING = 'ascii:backslashreplace'
+      $beijing = py -m eye_collector.cli inspect-file --source beijing-open-data-designated-medical-institutions --file $env:P5_BEIJING_OFFICIAL_FILE | ConvertFrom-Json
+      if ($LASTEXITCODE -ne 0 -or $beijing.sha256 -ne '49848ce24856fb28ed542f46c0e5f805c35b19c3fcea0d85d97d0734487fa918' -or $beijing.row_count -ne 4876 -or -not $beijing.schema_match -or -not $beijing.ready_to_import -or $beijing.recommended_first_pilot_limit -ne 50) {
+        throw 'Read-only inspection of the official Beijing file did not match the approved file fingerprint and schema.'
+      }
+      $shenzhen = py -m eye_collector.cli inspect-file --source shenzhen-open-data-baoan-hospital-basic-information --file $env:P5_SHENZHEN_OFFICIAL_FILE | ConvertFrom-Json
+      if ($LASTEXITCODE -ne 0 -or $shenzhen.sha256 -ne '9b9554a8553676c906b8b364987ca11d929a204a02fdd3503e23be1cf86348d7' -or $shenzhen.archive_member_sha256 -ne '55a06fd088b436506a4c5692424a07e487159300ad6f191fce046bdbcdd1a129' -or $shenzhen.archive_member_name -ne '宝安区-医院基本信息_2920002800636.xlsx' -or $shenzhen.data_sheet_name -ne '数据集1' -or $shenzhen.row_count -ne 27 -or -not $shenzhen.schema_match -or -not $shenzhen.ready_to_import) {
+        throw ('Read-only Shenzhen inspection mismatch: ' + ($shenzhen | ConvertTo-Json -Compress))
+      }
+      $beijing | ConvertTo-Json -Compress
+      $shenzhen | ConvertTo-Json -Compress
+      if ($null -eq $previousPythonIoEncoding) {
+        Remove-Item Env:\PYTHONIOENCODING -ErrorAction SilentlyContinue
+      } else {
+        $env:PYTHONIOENCODING = $previousPythonIoEncoding
+      }
+    }
   }
   finally {
     Pop-Location

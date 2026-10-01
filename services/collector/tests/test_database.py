@@ -2,12 +2,15 @@ from __future__ import annotations
 
 import csv
 import hashlib
+import io
 import os
+import zipfile
 from datetime import date, datetime
 from pathlib import Path
 
 import psycopg
 import pytest
+from openpyxl import Workbook
 
 from eye_collector.db import PostgresRepository
 from eye_collector.exceptions import SourcePolicyError
@@ -19,6 +22,7 @@ from eye_collector.sources.fixture import FixtureSourceAdapter, FixtureTransport
 from eye_collector.sources.open_data_file import (
     BEIJING_DESIGNATED_MEDICAL_INSTITUTIONS,
     BEIJING_HOSPITALS,
+    SHENZHEN_BAOAN_HOSPITALS,
     OpenDataFileAdapter,
 )
 
@@ -165,7 +169,20 @@ def test_database_file_provenance_is_linked_and_replay_keeps_snapshots_idempoten
     with source_file.open("w", newline="", encoding="utf-8-sig") as stream:
         writer = csv.writer(stream)
         writer.writerow(BEIJING_DESIGNATED_MEDICAL_INSTITUTIONS.expected_headers)
-        writer.writerow(["真实名称格式测试医院", "测试地址", "三级", "综合", "东城区", "12345"])
+        writer.writerow(
+            [
+                1,
+                "真实名称格式测试医院",
+                "12345",
+                "110101",
+                "01",
+                "03",
+                "测试地址",
+                "row-1",
+                "created",
+                "updated",
+            ]
+        )
     original_bytes = source_file.read_bytes()
     provenance = FileImportProvenance(
         original_filename=source_file.name,
@@ -226,6 +243,136 @@ def test_database_file_provenance_is_linked_and_replay_keeps_snapshots_idempoten
         pytest.approx(provenance.obtained_at.timestamp()),
     )
     assert snapshot_count == (1,)
+
+
+def test_database_source_rights_match_real_export_business_mappings() -> None:
+    expected = {
+        BEIJING_DESIGNATED_MEDICAL_INSTITUTIONS.source_name: {
+            "source_fields",
+            "name",
+            "address",
+            "administrative_code",
+            "hospital_grade",
+            "source_category",
+            "registration_id",
+        },
+        SHENZHEN_BAOAN_HOSPITALS.source_name: {
+            "source_fields",
+            "source_reference_id",
+            "name",
+            "administrative_context",
+            "address",
+            "source_category",
+            "hospital_level",
+            "hospital_grade",
+            "specialties",
+            "hospital_description",
+        },
+    }
+    with psycopg.connect(database_url(), autocommit=True) as connection:
+        for source_name, fields in expected.items():
+            actual = connection.execute(
+                "SELECT permitted_fields FROM app_private.source_catalog WHERE name = %s",
+                (source_name,),
+            ).fetchone()
+            assert actual is not None and set(actual[0]) == fields
+
+
+def test_database_zip_replay_preserves_member_provenance_and_changed_snapshots(
+    tmp_path: Path,
+) -> None:
+    dataset = SHENZHEN_BAOAN_HOSPITALS
+    workbook = Workbook()
+    workbook.active.title = "资源描述信息"
+    sheet = workbook.create_sheet("数据集1")
+    sheet.append(list(dataset.expected_headers))
+    base = {header: "" for header in dataset.expected_headers}
+    base.update({"文档ID": "duplicate-doc", "名称": "同名测试医院", "所在区县": "宝安区"})
+    first = dict(base)
+    first["医院简介"] = "普通综合医院"
+    changed = dict(base)
+    changed["医院简介"] = "设有眼科门诊"
+    identical = dict(first)
+    for row in (first, changed, identical):
+        sheet.append([row[header] for header in dataset.expected_headers])
+    member_buffer = io.BytesIO()
+    workbook.save(member_buffer)
+    member_bytes = member_buffer.getvalue()
+    member_name = "宝安区-医院基本信息_2920002800636.xlsx"
+    archive_path = tmp_path / "宝安区-医院基本信息20261001071251275982.zip"
+    with zipfile.ZipFile(archive_path, "w", zipfile.ZIP_DEFLATED) as archive:
+        archive.writestr(member_name, member_bytes)
+    archive_bytes = archive_path.read_bytes()
+    provenance = FileImportProvenance(
+        original_filename=archive_path.name,
+        file_sha256=hashlib.sha256(archive_bytes).hexdigest(),
+        file_size_bytes=len(archive_bytes),
+        obtained_at=datetime.fromisoformat("2026-10-01T10:00:00+08:00"),
+        operator="integration-test-operator",
+        acquisition_method="official_portal_manual_download",
+        member_name=member_name,
+        member_sha256=hashlib.sha256(member_bytes).hexdigest(),
+        member_size_bytes=len(member_bytes),
+    )
+    adapter = OpenDataFileAdapter(archive_path, dataset)
+    repository = PostgresRepository.connect(database_url())
+    try:
+        first_run = CollectorRunner(repository, adapter, file_provenance=provenance).run(
+            "440306", limit=3
+        )
+        replay = CollectorRunner(repository, adapter, file_provenance=provenance).run(
+            "440306", limit=3
+        )
+    finally:
+        repository.close()
+
+    assert (first_run.status, first_run.counts.inserted, first_run.counts.unchanged) == (
+        "succeeded",
+        2,
+        1,
+    )
+    assert (replay.status, replay.counts.inserted, replay.counts.unchanged) == (
+        "succeeded",
+        0,
+        3,
+    )
+    assert archive_path.read_bytes() == archive_bytes
+    with psycopg.connect(database_url(), autocommit=True) as connection:
+        run_metadata = connection.execute(
+            """
+            SELECT file_original_filename, file_sha256, file_size_bytes,
+                   file_member_name, file_member_sha256, file_member_size_bytes
+            FROM app_private.import_runs
+            WHERE file_sha256 = %s AND source_id = (
+              SELECT id FROM app_private.source_catalog WHERE name = %s
+            )
+            ORDER BY started_at
+            """,
+            (provenance.file_sha256, dataset.source_name),
+        ).fetchall()
+        snapshots = connection.execute(
+            """
+            SELECT count(*), count(DISTINCT content_hash), count(DISTINCT source_key)
+            FROM app_private.source_records
+            WHERE source_id = (SELECT id FROM app_private.source_catalog WHERE name = %s)
+              AND source_key = 'duplicate-doc'
+            """,
+            (dataset.source_name,),
+        ).fetchone()
+    assert len(run_metadata) == 2
+    assert all(
+        row
+        == (
+            archive_path.name,
+            provenance.file_sha256,
+            len(archive_bytes),
+            member_name,
+            provenance.member_sha256,
+            len(member_bytes),
+        )
+        for row in run_metadata
+    )
+    assert snapshots == (2, 2, 1)
 
 
 def test_database_inspect_source_is_read_only() -> None:

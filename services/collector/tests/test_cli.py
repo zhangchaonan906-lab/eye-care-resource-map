@@ -1,16 +1,23 @@
 from __future__ import annotations
 
 import csv
+import hashlib
+import io
 import json
+import zipfile
 from datetime import date
 from pathlib import Path
 
 import pytest
+from openpyxl import Workbook
 
 from eye_collector.cli import build_parser, main
 from eye_collector.models import RawRecord, SourceDescriptor, SourceRegistration
 from eye_collector.policy import SourcePolicy
-from eye_collector.sources.open_data_file import BEIJING_DESIGNATED_MEDICAL_INSTITUTIONS
+from eye_collector.sources.open_data_file import (
+    BEIJING_DESIGNATED_MEDICAL_INSTITUTIONS,
+    SHENZHEN_BAOAN_HOSPITALS,
+)
 
 
 class FakeRepository:
@@ -128,12 +135,16 @@ def test_official_file_cli_uses_catalog_policy_and_existing_import_lifecycle(
         writer = csv.writer(stream)
         writer.writerow(dataset.expected_headers)
         row = {
+            "序号": "1",
             "医院名称": "北京市测试医院",
-            "医院地址": "北京市测试路1号",
-            "医院等级": "三级甲等",
-            "医院类别": "综合",
-            "所属区": "东城区",
             "定点医疗机构编码": "01020304",
+            "所属区": "110101",
+            "医院类别": "01",
+            "医院等级": "03",
+            "医院地址": "北京市测试路1号",
+            "数据唯一记录号": "ignored-id",
+            "数据创建时间": "created",
+            "数据更新时间": "updated",
         }
         writer.writerow([row[header] for header in dataset.expected_headers])
     repository = FakeRepository()
@@ -147,7 +158,7 @@ def test_official_file_cli_uses_catalog_policy_and_existing_import_lifecycle(
                 "source_fields",
                 "name",
                 "address",
-                "administrative_context",
+                "administrative_code",
                 "hospital_grade",
                 "source_category",
                 "registration_id",
@@ -193,14 +204,16 @@ def test_inspect_file_reports_readiness_without_starting_an_import_run(
     with source_file.open("w", newline="", encoding="utf-8-sig") as stream:
         writer = csv.writer(stream)
         writer.writerow(dataset.expected_headers)
-        writer.writerow(["测试医院", "地址", "三级", "综合", "东城区", "12345"])
+        writer.writerow(
+            [1, "测试医院", "12345", "110101", "01", "03", "地址", "x1", "created", "updated"]
+        )
     repository = FakeRepository()
     repository.registration = SourceRegistration(
         "source-id",
         dataset.source_name,
         dataset.dataset_url,
         "official platform dataset",
-        frozenset({"source_fields", "name", "address", "administrative_context"}),
+        frozenset({"source_fields", "name", "address", "administrative_code"}),
         "manual_only",
         "approved",
         dataset_page=dataset.dataset_url,
@@ -218,6 +231,7 @@ def test_inspect_file_reports_readiness_without_starting_an_import_run(
     assert result["filename"] == "official.csv"
     assert result["file_size_bytes"] == source_file.stat().st_size
     assert result["detected_format"] == "csv"
+    assert result["container_format"] is None
     assert result["headers"] == list(dataset.expected_headers)
     assert result["row_count"] == 1
     assert result["approved_dataset"] == dataset.source_name
@@ -225,6 +239,81 @@ def test_inspect_file_reports_readiness_without_starting_an_import_run(
     assert result["configured_pilot_limit"] == 300
     assert result["allowed_region"] == "110000"
     assert result["ready_to_import"] is True
+    assert result["recommended_first_pilot_limit"] == 1
+    assert repository.inspection_reads == 1
+    assert repository.started == 0
+    assert repository.inserted == 0
+
+
+def test_inspect_zip_reports_original_and_member_fingerprints_read_only(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], tmp_path: Path
+) -> None:
+    dataset = SHENZHEN_BAOAN_HOSPITALS
+    workbook = Workbook()
+    workbook.active.title = "资源描述信息"
+    data_sheet = workbook.create_sheet("数据集1")
+    data_sheet.append(list(dataset.expected_headers))
+    data_sheet.append(
+        [
+            "doc-1",
+            "测试医院",
+            "宝安区",
+            "",
+            "地址",
+            "",
+            "",
+            "",
+            "",
+            "公立",
+            "三级",
+            "甲等",
+            "",
+            "有眼科门诊",
+            "",
+            "",
+            "",
+        ]
+    )
+    workbook_bytes = io.BytesIO()
+    workbook.save(workbook_bytes)
+    member_bytes = workbook_bytes.getvalue()
+    source_file = tmp_path / "baoan.zip"
+    member_name = "宝安区-医院基本信息_2920002800636.xlsx"
+    with zipfile.ZipFile(source_file, "w", zipfile.ZIP_DEFLATED) as archive:
+        archive.writestr(member_name, member_bytes)
+    archive_bytes = source_file.read_bytes()
+
+    repository = FakeRepository()
+    repository.registration = SourceRegistration(
+        "source-id",
+        dataset.source_name,
+        dataset.dataset_url,
+        "approved synthetic fixture",
+        frozenset(),
+        "manual_only",
+        "approved",
+        dataset_page=dataset.dataset_url,
+        source_updated_at=date(2025, 4, 15),
+        pilot_group_record_limit=300,
+        pilot_group_record_count=0,
+    )
+    monkeypatch.setenv("DATABASE_URL", "postgresql://eye_collector:test@localhost/eye")
+    monkeypatch.setattr("eye_collector.cli.PostgresRepository.connect", lambda _url: repository)
+
+    exit_code = main(["inspect-file", "--source", dataset.source_key, "--file", str(source_file)])
+
+    result = json.loads(capsys.readouterr().out)
+    assert exit_code == 0
+    assert result["filename"] == "baoan.zip"
+    assert result["sha256"] == hashlib.sha256(archive_bytes).hexdigest()
+    assert result["container_format"] == "zip"
+    assert result["archive_member_name"] == member_name
+    assert result["archive_member_sha256"] == hashlib.sha256(member_bytes).hexdigest()
+    assert result["archive_member_size_bytes"] == len(member_bytes)
+    assert result["data_sheet_name"] == "数据集1"
+    assert result["row_count"] == 1
+    assert result["ready_to_import"] is True
+    assert result["recommended_first_pilot_limit"] == 1
     assert repository.inspection_reads == 1
     assert repository.started == 0
     assert repository.inserted == 0
