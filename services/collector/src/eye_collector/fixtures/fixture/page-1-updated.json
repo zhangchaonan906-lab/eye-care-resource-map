@@ -1,0 +1,8 @@
+{
+  "records": [
+    {"source_key": "clinic-001", "source_url": "https://fixture.invalid/facilities/clinic-001", "raw_payload": {"name": "样例眼科门诊一", "address": "北京市朝阳区样例路1号", "region": "110000", "updated_at": "2026-09-01"}},
+    {"source_key": "clinic-002", "source_url": "https://fixture.invalid/facilities/clinic-002", "raw_payload": {"name": "样例眼科门诊二（更新版）", "address": "北京市海淀区样例路2号", "region": "110000", "updated_at": "2026-09-15"}},
+    {"source_key": "clinic-003", "source_url": "https://fixture.invalid/facilities/clinic-003", "raw_payload": {"name": "样例眼科门诊三", "address": "北京市西城区样例路3号", "region": "110000", "updated_at": "2026-09-01"}}
+  ],
+  "next_cursor": "page-2"
+}

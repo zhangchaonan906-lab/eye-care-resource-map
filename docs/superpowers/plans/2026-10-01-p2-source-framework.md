@@ -65,7 +65,7 @@
 
 **Files:**
 - Create `services/collector/src/eye_collector/sources/fixture.py`
-- Create `services/collector/tests/fixtures/fixture/{page-1.json,page-2.json,page-2-updated.json}`
+- Create `services/collector/src/eye_collector/fixtures/fixture/{page-1.json,page-1-updated.json,page-2.json}` (packaged synthetic fixtures so the installed CLI remains offline)
 - Create `services/collector/tests/test_fixture_adapter.py`
 
 - [ ] Test multi-page cursor traversal, 6–10 source records, a duplicate unchanged key across pages, updated revision, and mock responses for 429/500/timeout.
