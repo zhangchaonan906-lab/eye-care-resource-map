@@ -45,6 +45,16 @@ BEGIN
   END IF;
 
   PERFORM pg_advisory_xact_lock(hashtextextended(group_key, 0));
+  IF EXISTS (
+    SELECT 1
+    FROM app_private.source_records AS records
+    WHERE records.source_id = NEW.source_id
+      AND records.source_key = NEW.source_key
+      AND records.content_hash = NEW.content_hash
+  ) THEN
+    RETURN NEW;
+  END IF;
+
   SELECT count(*) INTO current_count
   FROM app_private.source_records AS records
   JOIN app_private.source_catalog AS sources ON sources.id = records.source_id
