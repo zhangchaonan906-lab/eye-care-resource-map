@@ -1,10 +1,10 @@
 {
   "records": [
-    {"source_key": "clinic-003", "source_url": "https://fixture.invalid/facilities/clinic-003", "raw_payload": {"name": "样例眼科门诊三", "address": "北京市西城区样例路3号", "region": "110000", "updated_at": "2026-09-01"}},
-    {"source_key": "clinic-004", "source_url": "https://fixture.invalid/facilities/clinic-004", "raw_payload": {"name": "样例眼科门诊四", "address": "北京市东城区样例路4号", "region": "110000", "updated_at": "2026-09-02"}},
-    {"source_key": "clinic-005", "source_url": "https://fixture.invalid/facilities/clinic-005", "raw_payload": {"name": "样例眼科门诊五", "address": "北京市丰台区样例路5号", "region": "110000", "updated_at": "2026-09-02"}},
-    {"source_key": "clinic-006", "source_url": "https://fixture.invalid/facilities/clinic-006", "raw_payload": {"name": "样例眼科门诊六", "address": "北京市通州区样例路6号", "region": "110000", "updated_at": "2026-09-03"}},
-    {"source_key": "clinic-007", "source_url": "https://fixture.invalid/facilities/clinic-007", "raw_payload": {"name": "样例眼科门诊七", "address": "北京市昌平区样例路7号", "region": "110000", "updated_at": "2026-09-03"}}
+    {"source_key": "clinic-003", "source_url": "https://fixture.invalid/facilities/clinic-003", "raw_payload": {"name": "\u6837\u4f8b\u773c\u79d1\u533b\u9662", "address": "\u5317\u4eac\u5e02\u897f\u57ce\u533a\u6837\u4f8b\u8def3\u53f7", "region": "110000", "administrative_code": "110102", "updated_at": "2026-09-01"}},
+    {"source_key": "clinic-004", "source_url": "https://fixture.invalid/facilities/clinic-004", "raw_payload": {"name": "\u6837\u4f8b\u95e8\u8bca", "address": "\u5317\u4eac\u5e02\u4e1c\u57ce\u533a\u6837\u4f8b\u8def4\u53f7", "region": "110000", "administrative_code": "110101", "updated_at": "2026-09-02"}},
+    {"source_key": "clinic-005", "source_url": "https://fixture.invalid/facilities/clinic-005", "raw_payload": {"name": "\u6837\u4f8b\u95e8\u8bca", "address": "\u5317\u4eac\u5e02\u4e1c\u57ce\u533a\u6837\u4f8b\u8def5\u53f7", "region": "110000", "administrative_code": "110101", "updated_at": "2026-09-02"}},
+    {"source_key": "clinic-006", "source_url": "https://fixture.invalid/facilities/clinic-006", "raw_payload": {"name": "\u6837\u4f8b\u4e2d\u5fc3", "address": "\u5317\u4eac\u5e02\u671d\u9633\u533a\u6837\u4f8b\u8def6\u53f7", "region": "110000", "administrative_code": "110105", "campus_name": "\u5317\u533a", "departments": ["\u773c\u79d1\u4e2d\u5fc3"], "updated_at": "2026-09-03"}},
+    {"source_key": "clinic-007", "source_url": "https://fixture.invalid/facilities/clinic-007", "raw_payload": {"address": "\u5317\u4eac\u5e02\u660c\u5e73\u533a\u6837\u4f8b\u8def7\u53f7", "region": "110000", "administrative_code": "110114", "updated_at": "2026-09-03"}}
   ],
   "next_cursor": null
 }

@@ -35,7 +35,7 @@ Linux CI 等价入口是仓库根目录的 `scripts/test-db.sh`。两个脚本�
 $env:EYE_MAP_POSTGRES_PASSWORD = [Convert]::ToHexString([Security.Cryptography.RandomNumberGenerator]::GetBytes(32))
 $env:EYE_MAP_DB_PORT = "55432"
 docker compose up -d --wait
-foreach ($migration in @('001_core.sql', '002_evidence_location.sql', '003_published_view.sql', '004_collector_permissions.sql')) {
+foreach ($migration in @('001_core.sql', '002_evidence_location.sql', '003_published_view.sql', '004_collector_permissions.sql', '005_etl_candidates.sql')) {
   docker compose exec -T db psql -U eye -d eye -v ON_ERROR_STOP=1 -f "/workspace/db/migrations/$migration"
   if ($LASTEXITCODE -ne 0) { throw "Migration failed: $migration" }
 }
@@ -43,9 +43,14 @@ $collectorPassword = [Convert]::ToHexString([Security.Cryptography.RandomNumberG
 docker compose exec -T db psql -U eye -d eye -v "collector_password=$collectorPassword" -f /workspace/scripts/provision-collector-login.sql
 docker compose exec -T db psql -U eye -d eye -f /workspace/scripts/seed-fixture-source.sql
 $env:DATABASE_URL = "postgresql://eye_collector_runtime:$collectorPassword@127.0.0.1:55432/eye"
+$etlPassword = [Convert]::ToHexString([Security.Cryptography.RandomNumberGenerator]::GetBytes(32))
+docker compose exec -T db psql -U eye -d eye -v "etl_password=$etlPassword" -f /workspace/scripts/provision-etl-login.sql
+$env:ETL_DATABASE_URL = "postgresql://eye_etl_runtime:$etlPassword@127.0.0.1:55432/eye"
 ```
 
 Fixture seed 仅创建合成来源及用于测试拒绝路径的 pending/suspended/blocked 登记。
+
+P3 ETL 使用隔离的 `ETL_DATABASE_URL` 和 `eye_etl_runtime` 最小权限账号。先按 migration 005 升级数据库，并用 `scripts/provision-etl-login.sql` 创建登录；`scripts/test-db.ps1` 会演示完整合成数据测试流程。详见 [`docs/etl/README.md`](../../docs/etl/README.md)。
 
 ## 运行 Fixture
 
@@ -63,10 +68,21 @@ Dry-run 仍会创建并结束 `import_runs`，用于记录审计与 requested/re
 
 Fixture 包含 7 个唯一 key、分页重复记录、可更新版本，以及 429、500、timeout mock 场景。`--fixture-revision updated` 用于验证同一来源 key 的内容变更形成新历史 snapshot。`--limit` 限制处理的记录数；网络层仍只访问 Fixture mock transport。
 
+## P3 ETL 处理
+
+在完成迁移和设置独立 ETL 登录后，运行：
+
+```powershell
+$env:ETL_DATABASE_URL = "postgresql://eye_etl_runtime:<password>@127.0.0.1:55432/eye"
+py -m eye_collector.cli process --limit 100
+```
+
+命令只读取已批准并允许自动采集的来源快照，输出 JSON 处理统计。它不修改原始快照、不写正式医院表，也不发布或合并医院。无名称的快照会被跳过；重新执行不会重复创建已处理候选。
+
 ## 测试、lint 与类型检查
 
 ```powershell
-py -m pytest tests -m "not database" -q
+py -m pytest tests -m "not database and not etl_database" -q
 py -m ruff check src tests
 py -m mypy src/eye_collector
 pwsh -NoProfile -File scripts/test-db.ps1

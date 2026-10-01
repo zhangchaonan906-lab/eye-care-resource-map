@@ -3,12 +3,15 @@ from __future__ import annotations
 import argparse
 import json
 import logging
+import os
 import sys
 from collections.abc import Sequence
 from typing import cast
 
 from eye_collector.config import CollectorConfig
 from eye_collector.db import PostgresRepository
+from eye_collector.etl.pipeline import Pipeline
+from eye_collector.etl.repository import ETLRepository
 from eye_collector.http import HttpClient
 from eye_collector.logging_utils import JsonLogFormatter, safe_error_summary
 from eye_collector.models import ImportResult
@@ -41,6 +44,10 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument("--limit", type=_positive_int)
     run.add_argument("--dry-run", action="store_true")
     run.add_argument("--fixture-revision", choices=("stable", "updated"), default="stable")
+    process = commands.add_parser(
+        "process", help="process approved source snapshots through P3 ETL"
+    )
+    process.add_argument("--limit", type=_positive_int)
     return parser
 
 
@@ -70,8 +77,17 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     _configure_logging()
     repository: PostgresRepository | None = None
+    etl_repository: ETLRepository | None = None
     http: HttpClient | None = None
     try:
+        if args.command == "process":
+            etl_database_url = os.environ.get("ETL_DATABASE_URL")
+            if not etl_database_url:
+                raise ValueError("ETL_DATABASE_URL is required for process")
+            etl_repository = ETLRepository.connect(etl_database_url)
+            stats = Pipeline(etl_repository).run(limit=args.limit)
+            print(json.dumps(stats.as_dict(), ensure_ascii=False, separators=(",", ":")))
+            return 0 if stats.errors == 0 else 1
         config = CollectorConfig.from_env()
         if args.source != "fixture":
             raise ValueError("only the offline fixture source is available in P2")
@@ -109,6 +125,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             http.close()
         if repository is not None:
             repository.close()
+        if etl_repository is not None:
+            etl_repository.close()
 
 
 if __name__ == "__main__":
