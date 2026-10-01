@@ -13,6 +13,11 @@ CREATE TABLE app_private.etl_source_dispositions (
 );
 GRANT SELECT, INSERT ON app_private.etl_source_dispositions TO eye_etl;
 
+-- Keep P3 match candidate lookup bounded to an exact normalized name within a region.
+CREATE INDEX facilities_region_normalized_name_idx
+  ON app_private.facilities (region_id, normalized_name)
+  WHERE verification_status <> 'withdrawn';
+
 CREATE TABLE app_private.geocode_provider_policies (
   provider text NOT NULL,
   provider_version text NOT NULL,

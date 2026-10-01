@@ -18,6 +18,9 @@ class Cursor:
     def fetchone(self) -> tuple[Any, ...] | None:
         return self.rows[0] if self.rows else None
 
+    def fetchall(self) -> list[tuple[Any, ...]]:
+        return self.rows
+
 
 class Connection:
     def __init__(self, rows: list[tuple[Any, ...]]) -> None:
@@ -102,6 +105,54 @@ def test_existing_source_record_candidate_skips_evidence_reinsertion() -> None:
 
     assert candidate_id is None
     assert len(connection.statements) == 1
+
+
+def test_terminal_missing_name_skip_is_versioned_and_idempotent() -> None:
+    connection = Connection([])
+    repository = ETLRepository(connection)  # type: ignore[arg-type]
+
+    repository.record_terminal_skip("source-record-1", "missing_name")
+
+    query, params = connection.statements[0]
+    assert "etl_source_dispositions" in query
+    assert "ON CONFLICT (source_record_id, pipeline_version) DO NOTHING" in query
+    assert params == ("source-record-1", "p3.2", "terminal_skip", "missing_name")
+
+
+def test_facility_target_query_filters_to_reliable_registration_or_exact_name_region() -> None:
+    connection = Connection(
+        [("facility-1", "示例医院", "东院", "110105", "REG-1")]
+    )
+    repository = ETLRepository(connection)  # type: ignore[arg-type]
+
+    targets = repository.facility_targets_for(candidate())
+
+    query, params = connection.statements[0]
+    assert len(targets) == 1
+    assert "o.registration_id = %s" in query
+    assert "f.normalized_name = %s" in query
+    assert "r.adcode = %s" in query
+    assert params == ("REG-1", "REG-1", "110105", "示例医院(东院)")
+
+
+def test_untrusted_registration_id_is_not_queried() -> None:
+    connection = Connection([])
+    repository = ETLRepository(connection)  # type: ignore[arg-type]
+    untrusted = candidate()
+    untrusted = NormalizedRecord(
+        **{
+            field: getattr(untrusted, field)
+            for field in untrusted.__dataclass_fields__
+            if field != "registration_id_reliable"
+        },
+        registration_id_reliable=False,
+    )
+
+    repository.facility_targets_for(untrusted)
+
+    query, params = connection.statements[0]
+    assert "o.registration_id = %s" in query
+    assert params == (None, None, "110105", "示例医院(东院)")
 
 
 def test_duplicate_case_requires_two_distinct_candidate_ids() -> None:

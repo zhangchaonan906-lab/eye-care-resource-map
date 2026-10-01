@@ -4,7 +4,7 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from typing import Any
 
-from eye_collector.etl.models import FacilityTarget, SourceSnapshot
+from eye_collector.etl.models import FacilityTarget, NormalizedRecord, SourceSnapshot
 from eye_collector.etl.pipeline import Pipeline
 
 
@@ -24,6 +24,8 @@ class Repository:
         self.created: list[tuple[str, tuple[Any, ...]]] = []
         self.matches: list[tuple[str, str, str | None]] = []
         self.duplicate_cases: list[tuple[tuple[str, ...], list[str]]] = []
+        self.dispositions: list[tuple[str, str]] = []
+        self.target_queries: list[NormalizedRecord] = []
         self.raw_before = [dict(snapshot.raw_payload) for snapshot in snapshots]
         self._counter = 0
 
@@ -43,8 +45,12 @@ class Repository:
         self.created.append((candidate_id, evidence))
         return candidate_id
 
-    def facility_targets(self) -> list[FacilityTarget]:
+    def facility_targets_for(self, candidate: NormalizedRecord) -> list[FacilityTarget]:
+        self.target_queries.append(candidate)
         return self.facilities
+
+    def record_terminal_skip(self, source_record_id: str, reason_code: str) -> None:
+        self.dispositions.append((source_record_id, reason_code))
 
     def update_match(self, candidate_id: str, status: str, facility_id: str | None) -> None:
         self.matches.append((candidate_id, status, facility_id))
@@ -94,6 +100,7 @@ def test_pipeline_parses_normalizes_extracts_evidence_and_returns_structured_cou
     }
     assert repository.created[0][1][0].evidence_text == "眼科门诊"
     assert repository.matches == [("candidate-1", "matched", "facility-1")]
+    assert repository.target_queries[0].source_record_id == "source-1"
     assert payload == repository.raw_before[0]
 
 
@@ -129,3 +136,4 @@ def test_pipeline_counts_invalid_and_previously_processed_snapshots() -> None:
     assert result.already_processed == 4
     assert result.skipped == 1
     assert result.candidates_created == 0
+    assert repository.dispositions == [("bad-name", "missing_name")]
