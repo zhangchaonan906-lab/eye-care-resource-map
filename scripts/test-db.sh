@@ -34,11 +34,11 @@ for sql_file in \
   /workspace/db/tests/002_evidence_location.sql \
   /workspace/db/tests/003_published_view.sql \
   /workspace/db/tests/004_collector_permissions.sql; do
-  compose exec -T db psql -U eye -d eye -v ON_ERROR_STOP=1 -f "$sql_file"
+  compose exec -T db psql -h 127.0.0.1 -U eye -d eye -v ON_ERROR_STOP=1 -f "$sql_file"
 done
-compose exec -T db psql -U eye -d eye -v ON_ERROR_STOP=1 \
+compose exec -T db psql -h 127.0.0.1 -U eye -d eye -v ON_ERROR_STOP=1 \
   -v collector_password="$collector_password" -f /workspace/scripts/provision-collector-login.sql
-compose exec -T db psql -U eye -d eye -v ON_ERROR_STOP=1 \
+compose exec -T db psql -h 127.0.0.1 -U eye -d eye -v ON_ERROR_STOP=1 \
   -f /workspace/scripts/seed-fixture-source.sql
 
 cd "$repo_root/services/collector"
