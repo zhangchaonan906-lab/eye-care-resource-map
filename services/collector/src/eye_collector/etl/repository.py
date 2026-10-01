@@ -6,6 +6,7 @@ import psycopg
 from psycopg.rows import tuple_row
 from psycopg.types.json import Jsonb
 
+from eye_collector.etl.matching import duplicate_fingerprint, duplicate_reason
 from eye_collector.etl.models import NormalizedRecord, OphthalmologyEvidence
 
 _PIPELINE_VERSION = "p3.1"
@@ -90,3 +91,54 @@ class ETLRepository:
                     ),
                 )
             return candidate_id
+
+    def persist_duplicate_case(
+        self, key: tuple[str, ...], candidate_ids: list[str]
+    ) -> str:
+        unique_ids = sorted(set(candidate_ids))
+        if len(unique_ids) < 2:
+            raise ValueError("duplicate case requires at least two distinct candidate ids")
+
+        fingerprint = duplicate_fingerprint(key)
+        reason = duplicate_reason(key)
+        with self._connection.transaction():
+            row = self._connection.execute(
+                """
+                INSERT INTO app_private.duplicate_cases (reason, match_fingerprint)
+                VALUES (%s, %s)
+                ON CONFLICT (match_fingerprint) DO NOTHING
+                RETURNING id::text
+                """,
+                (reason, fingerprint),
+            ).fetchone()
+            if row is None:
+                row = self._connection.execute(
+                    """
+                    SELECT id::text FROM app_private.duplicate_cases
+                    WHERE match_fingerprint = %s
+                    """,
+                    (fingerprint,),
+                ).fetchone()
+            if row is None:
+                raise RuntimeError("duplicate case could not be created or found")
+
+            case_id = str(row[0])
+            for candidate_id in unique_ids:
+                self._connection.execute(
+                    """
+                    INSERT INTO app_private.duplicate_case_candidates
+                      (duplicate_case_id, candidate_record_id)
+                    VALUES (%s, %s)
+                    ON CONFLICT (duplicate_case_id, candidate_record_id) DO NOTHING
+                    """,
+                    (case_id, candidate_id),
+                )
+            self._connection.execute(
+                """
+                UPDATE app_private.candidate_records
+                SET match_status = 'needs_review', proposed_facility_id = NULL
+                WHERE id = ANY(%s::uuid[]) AND match_status <> 'rejected'
+                """,
+                (unique_ids,),
+            )
+            return case_id

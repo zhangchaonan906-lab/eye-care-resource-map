@@ -4,6 +4,7 @@ import unicodedata
 
 from eye_collector.etl.models import FacilityTarget, MatchResult, NormalizedRecord
 from eye_collector.etl.normalization import normalize_text
+from eye_collector.hashing import canonical_sha256
 
 
 def _identifier(value: str | None) -> str | None:
@@ -106,3 +107,13 @@ def duplicate_key(candidate: NormalizedRecord) -> tuple[str, ...] | None:
             campus,
         )
     return None
+
+
+def duplicate_reason(key: tuple[str, ...]) -> str:
+    if key[0] == "registration_id":
+        return "same_reliable_registration_id_and_campus"
+    return "same_normalized_name_region_and_campus"
+
+
+def duplicate_fingerprint(key: tuple[str, ...]) -> str:
+    return canonical_sha256({"duplicate_key": list(key)})

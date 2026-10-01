@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from eye_collector.etl.matching import duplicate_key, match_facility
+from eye_collector.etl.matching import duplicate_fingerprint, duplicate_key, match_facility
 from eye_collector.etl.models import FacilityTarget, NormalizedRecord
 
 
@@ -107,3 +107,13 @@ def test_duplicate_key_is_deterministic_and_never_uses_fuzzy_name() -> None:
     assert duplicate_key(left) == duplicate_key(right)
     assert duplicate_key(left) is not None
     assert duplicate_key(left) != duplicate_key(similar)
+
+
+def test_duplicate_fingerprint_is_stable_for_the_same_deterministic_key() -> None:
+    key = ("name_region_campus", "示例医院", "110105", "东院")
+
+    first = duplicate_fingerprint(key)
+    second = duplicate_fingerprint(tuple(key))
+
+    assert first == second
+    assert len(first) == 64

@@ -5,6 +5,8 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from typing import Any
 
+import pytest
+
 from eye_collector.etl.models import NormalizedRecord, OphthalmologyEvidence
 from eye_collector.etl.repository import ETLRepository
 
@@ -20,6 +22,7 @@ class Cursor:
 class Connection:
     def __init__(self, rows: list[tuple[Any, ...]]) -> None:
         self.rows = rows
+        self.responses: list[list[tuple[Any, ...]]] = []
         self.statements: list[tuple[str, tuple[Any, ...] | None]] = []
         self.transactions = 0
 
@@ -32,7 +35,8 @@ class Connection:
         self, query: str, params: tuple[Any, ...] | None = None
     ) -> Cursor:
         self.statements.append((query, params))
-        return Cursor(self.rows)
+        rows = self.responses.pop(0) if self.responses else self.rows
+        return Cursor(rows)
 
 
 def candidate() -> NormalizedRecord:
@@ -98,3 +102,49 @@ def test_existing_source_record_candidate_skips_evidence_reinsertion() -> None:
 
     assert candidate_id is None
     assert len(connection.statements) == 1
+
+
+def test_duplicate_case_requires_two_distinct_candidate_ids() -> None:
+    connection = Connection([])
+    repository = ETLRepository(connection)  # type: ignore[arg-type]
+
+    with pytest.raises(ValueError, match="at least two distinct"):
+        repository.persist_duplicate_case(
+            ("name_region_campus", "示例医院", "110105", ""), ["candidate-1"]
+        )
+
+    assert connection.statements == []
+
+
+def test_duplicate_case_and_members_are_inserted_idempotently() -> None:
+    connection = Connection([])
+    connection.responses = [[("case-1",)], [], [], []]
+    repository = ETLRepository(connection)  # type: ignore[arg-type]
+
+    case_id = repository.persist_duplicate_case(
+        ("name_region_campus", "示例医院", "110105", ""),
+        ["candidate-1", "candidate-2"],
+    )
+
+    assert case_id == "case-1"
+    assert connection.transactions == 1
+    assert len(connection.statements) == 4
+    assert "ON CONFLICT (match_fingerprint) DO NOTHING" in connection.statements[0][0]
+    assert (
+        "ON CONFLICT (duplicate_case_id, candidate_record_id) DO NOTHING"
+        in connection.statements[1][0]
+    )
+    assert "needs_review" in connection.statements[3][0]
+
+
+def test_existing_duplicate_case_is_reused_by_its_stable_fingerprint() -> None:
+    connection = Connection([])
+    connection.responses = [[], [("existing-case",)], [], [], []]
+    repository = ETLRepository(connection)  # type: ignore[arg-type]
+
+    case_id = repository.persist_duplicate_case(
+        ("registration_id", "reg-9", "东院"), ["candidate-1", "candidate-2"]
+    )
+
+    assert case_id == "existing-case"
+    assert "WHERE match_fingerprint = %s" in connection.statements[1][0]

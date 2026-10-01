@@ -32,6 +32,12 @@ _PUNCTUATION = str.maketrans(
 _PHONE_FORMAT = re.compile(r"^[+0-9().\-/\s]+$")
 
 
+def _normalize_identifier(value: str | None) -> str | None:
+    if value is None:
+        return None
+    return "".join(unicodedata.normalize("NFKC", value).split()).casefold() or None
+
+
 def _normalize_text(value: str | None) -> str | None:
     if value is None:
         return None
@@ -70,8 +76,8 @@ def normalize_record(record: ParsedRecord) -> NormalizedRecord:
         original_phone=record.phone,
         normalized_phone=_normalize_phone(record.phone),
         administrative_code=record.administrative_code,
-        registration_id=record.registration_id,
+        registration_id=_normalize_identifier(record.registration_id),
         registration_id_reliable=record.registration_id_reliable,
-        campus_name=record.campus_name,
+        campus_name=_normalize_text(record.campus_name),
         raw_payload=record.raw_payload,
     )
