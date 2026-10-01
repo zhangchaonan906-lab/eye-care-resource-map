@@ -37,3 +37,17 @@ class NormalizedRecord:
     registration_id_reliable: bool
     campus_name: str | None
     raw_payload: Mapping[str, object]
+
+
+@dataclass(frozen=True, slots=True)
+class OphthalmologyEvidence:
+    source_record_id: str
+    field_name: str
+    evidence_text: str
+    evidence_type: str = "explicit_field_mention"
+
+
+@dataclass(frozen=True, slots=True)
+class EvidenceExtraction:
+    status: str
+    evidence: tuple[OphthalmologyEvidence, ...]
