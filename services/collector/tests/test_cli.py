@@ -16,7 +16,19 @@ class FakeRepository:
             "Fixture Directory",
             "https://fixture.invalid/directory",
             "Synthetic local fixture",
-            frozenset({"name", "address", "region", "updated_at"}),
+            frozenset(
+                {
+                    "name",
+                    "address",
+                    "phone",
+                    "region",
+                    "administrative_code",
+                    "registration_id",
+                    "campus_name",
+                    "departments",
+                    "updated_at",
+                }
+            ),
             "automated_access_allowed",
             "approved",
         )

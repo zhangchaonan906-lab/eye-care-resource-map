@@ -57,4 +57,14 @@ def test_fixture_never_emits_unapproved_or_derived_fields() -> None:
     with client:
         record = next(adapter.iter_records("110000", limit=1))
 
-    assert set(record.raw_payload) == {"name", "address", "region", "updated_at"}
+    assert set(record.raw_payload) == {
+        "name",
+        "address",
+        "phone",
+        "region",
+        "administrative_code",
+        "registration_id",
+        "campus_name",
+        "departments",
+        "updated_at",
+    }
