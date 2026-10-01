@@ -48,4 +48,5 @@ export interface PublicFacilityRepository {
   list(input: FacilityListInput): Promise<Page<PublicFacility>>;
   getById(id: string): Promise<PublicFacility | null>;
   search(input: SearchInput): Promise<Page<PublicFacility>>;
+  countPublished(): Promise<number>;
 }

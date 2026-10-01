@@ -68,6 +68,8 @@ Returns the stable category IDs and Chinese labels:
 - `eye_clinic`
 - `unknown`
 
+The `meta.publishedFacilityCount` field is the read-only count of facilities visible through the published API view. The map UI uses it to distinguish an empty published dataset from an empty local viewport.
+
 ## Facility response
 
 Each item contains only:

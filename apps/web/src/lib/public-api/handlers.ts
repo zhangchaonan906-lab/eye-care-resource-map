@@ -58,7 +58,7 @@ export async function searchHandler(request: Request, repository: PublicFacility
   }
 }
 
-export async function categoriesHandler(): Promise<Response> {
+export async function categoriesHandler(publishedFacilityCount = 0): Promise<Response> {
   return json({
     data: [
       { id: "eye_specialty_hospital", label: "眼科专科医院" },
@@ -67,7 +67,7 @@ export async function categoriesHandler(): Promise<Response> {
       { id: "eye_clinic", label: "眼科诊所" },
       { id: "unknown", label: "待核验" },
     ],
-    meta: { count: 5 },
+    meta: { count: 5, publishedFacilityCount },
     error: null,
   });
 }
