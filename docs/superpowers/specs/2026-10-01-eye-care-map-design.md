@@ -86,8 +86,8 @@ docs/operations/                         运行、回滚、抽检手册
 | 表 | 核心字段 | 约束/用途 |
 | --- | --- | --- |
 | `organizations` | `id, canonical_name, registration_id?, ownership_type?` | 可选机构主体；登记号仅在来源可信时填写 |
-| `facilities` | `id, organization_id?, name, normalized_name, campus_name?, category, province, city, district, adcode?, address, phone?, website?, hospital_level?, hospital_grade?, ophthalmology_status, verification_status, published_at?, last_verified_at?` | 实际就诊地点；类型为专科医院/综合医院眼科/眼科中心/诊所/待核验；未知值保留 `null` |
-| `facility_locations` | `facility_id, lon_wgs84, lat_wgs84, geog_wgs84, coordinate_source_id, accuracy_m?, location_status, verified_at` | 仅持久化获准存储的 WGS84 坐标；坐标异常不可发布 |
+| `facilities` | `id, organization_id?, name, normalized_name, campus_name?, category, region_id, address, phone?, website?, hospital_level?, hospital_grade?, ophthalmology_status, verification_status, published_at?, last_verified_at?` | 实际就诊地点；行政区通过 `region_id` 关联版本化 `regions`；类型为专科医院/综合医院眼科/眼科中心/诊所/待核验；未知值保留 `null` |
+| `facility_locations` | `facility_id, geog_wgs84, coordinate_source_record_id, accuracy_m?, location_status, verified_at` | 仅持久化获准存储的 WGS84 geography 点位，并关联具体来源快照；经纬度从 geography 派生，不另存一份 |
 | `source_catalog` | `id, name, url, owner, permitted_fields, use_basis, access_policy, status, reviewed_at` | 来源准入和变更记录 |
 | `source_records` | `id, source_id, source_key, raw_payload, source_url, collected_at, content_hash, import_run_id` | 原始快照；`source_id + source_key + content_hash` 幂等 |
 | `facility_evidence` | `facility_id, source_record_id, field_name, field_value, confidence, reviewed_at?` | 字段级溯源；眼科服务、等级、电话等均有证据 |
@@ -96,11 +96,13 @@ docs/operations/                         运行、回滚、抽检手册
 | `duplicate_case_candidates` | `duplicate_case_id, candidate_record_id` | 关联表；复合主键防重复成员，外键保证候选存在 |
 | `import_runs` | `id, source_id, region_code, started_at, ended_at, status, counts, error_summary` | 任务审计和重跑 |
 | `audit_events` | `id, actor_id, entity, entity_id, action, before, after, created_at` | 发布、合并、退回、撤销审计 |
-| `regions` | `adcode, name, level, parent_adcode, version, valid_from?, valid_to?` | 版本化行政区映射；不能只按名称关联 |
+| `regions` | `id, adcode, name, level, parent_id?, version, valid_from?, valid_to?` | 版本化行政区映射；`adcode + version` 唯一，子级通过 `parent_id` 关联，不能只按名称关联 |
 
 `facilities` 对已发布记录建立地区、分类、标准名索引；`facility_locations.geog_wgs84` 建 GiST 索引；搜索可从 PostgreSQL trigram/full-text 起步，必要时再引入专用搜索服务。Supabase 可启用 PostGIS，官方建议扩展放在独立 schema；`ST_DWithin` 可利用空间索引做半径筛选。[Supabase PostGIS 指南](https://supabase.com/docs/guides/database/extensions/postgis)、[PostGIS 半径查询](https://postgis.net/documentation/tips/st-dwithin/)
 
-重复案件的候选成员通过 `duplicate_case_candidates` 关联，pending 案件可以逐步组装；进入已解决状态时，事务必须确认至少有两条有效候选关联。
+重复案件的候选成员通过 `duplicate_case_candidates` 关联，pending 案件可以逐步组装；进入已解决状态时，事务必须确认至少有两条有效候选关联。P1 的 PostGIS geography 保存完整点位，公开视图从该列派生 `longitude_wgs84` 和 `latitude_wgs84`。
+
+P1 数据库保存 `source_catalog.status`，但 `import_runs` 表本身不拒绝 pending/suspended 来源。P2 来源适配器必须在创建导入批次前读取并要求来源状态为 `approved`；未经准入的来源不得进入采集流水线。P11 增加管理写入流程和相应数据库权限边界。
 
 ## 6. 标准化、去重、坐标和核验流水线
 
@@ -178,7 +180,7 @@ P13 做浏览器到 API 到数据库的完整流程测试；导入流水线用�
 | 阶段 | 目标与实现 | 预期文件 | 测试与验收 | 依赖 |
 | --- | --- | --- | --- | --- |
 | P1 数据模型 | 建迁移、约束、索引、已发布视图、审核审计表 | `db/migrations/*`, `packages/contracts/*` | 空库迁移/回滚、约束与索引检查通过 | P0、数据库选型 |
-| P2 来源框架 | 建来源登记、适配器接口、单个获准来源或授权文件导入 | `services/collector/sources/*`, `docs/data-sources/*` | 单来源断点续跑、幂等、限速、故障停止 | P1、来源准入 |
+| P2 来源框架 | 建来源登记、适配器接口；创建 `import_runs` 前必须检查 `source_catalog.status='approved'`，pending/suspended 来源拒绝入流水线；支持单个获准来源或授权文件导入 | `services/collector/sources/*`, `docs/data-sources/*` | 单来源断点续跑、幂等、限速、故障停止；测试 pending/suspended 来源不能创建导入任务 | P1、来源准入 |
 | P3 ETL | 规范化、眼科证据识别、候选匹配与人工冲突队列 | `services/collector/pipeline/*` | 固定样本可重复；不误合并跨院区 | P2 |
 | P4 坐标 | 接入可持久化的坐标提供方、精度和区划校验 | `services/collector/pipeline/geocode*` | 错省市和模糊地址进入待审，不发布 | P3、坐标许可 |
 | P5 两地试点 | 北京、广东的已准入来源批量导入和抽检 | `services/collector/tasks/pilot*`, `docs/operations/pilot-*` | 上述抽检门槛、覆盖缺口报告、可回滚 | P4 |
