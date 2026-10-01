@@ -15,7 +15,9 @@ from eye_collector.sources.open_data_file import (
     BEIJING_DESIGNATED_MEDICAL_INSTITUTIONS,
     BEIJING_HOSPITALS,
     SHENZHEN_BAOAN_HOSPITALS,
+    TIANJIN_REGISTRATION_PREVIEW,
     OpenDataFileAdapter,
+    inspect_open_data_file,
 )
 
 
@@ -304,3 +306,78 @@ def test_same_shenzhen_document_id_with_changed_content_remains_two_snapshots(
     assert [record.source_key for record in records] == ["doc-1", "doc-1"]
     assert records[0].raw_payload != records[1].raw_payload
     assert records[0].raw_payload["name"] == records[1].raw_payload["name"]
+
+
+def test_tianjin_preview_inspects_second_row_headers_and_maps_synthetic_xlsx(
+    tmp_path: Path,
+) -> None:
+    source_file = tmp_path / "tianjin-registration.xlsx"
+    workbook = Workbook()
+    sheet = workbook.active
+    sheet.title = "医疗机构执业登记"
+    sheet.merge_cells("A1:G1")
+    sheet["A1"] = "天津医疗机构执业登记信息"
+    sheet.append(list(TIANJIN_REGISTRATION_PREVIEW.expected_headers))
+    sheet.append(
+        [
+            "2026-01-02",
+            "天津测试医院A",
+            "天津市西青区测试路1号",
+            "眼科、医学检验科",
+            20,
+            "综合医院",
+            "公立",
+        ]
+    )
+    workbook.create_sheet("Sheet3")
+    workbook.save(source_file)
+
+    inspection = inspect_open_data_file(source_file, TIANJIN_REGISTRATION_PREVIEW)
+    records = list(OpenDataFileAdapter(source_file, TIANJIN_REGISTRATION_PREVIEW).iter_records(
+        "120000", limit=10
+    ))
+
+    assert inspection.headers == TIANJIN_REGISTRATION_PREVIEW.expected_headers
+    assert inspection.row_count == 1
+    assert inspection.schema_match is True
+    assert len(records) == 1
+    assert records[0].raw_payload["name"] == "天津测试医院A"
+    assert records[0].raw_payload["address"] == "天津市西青区测试路1号"
+    assert records[0].raw_payload["specialties"] == "眼科、医学检验科"
+    assert records[0].raw_payload["source_category"] == "综合医院"
+    assert records[0].raw_payload["ownership_type"] == "公立"
+    assert records[0].raw_payload["source_fields"] == {
+        "批准时间": "2026-01-02",
+        "机构名称": "天津测试医院A",
+        "地址": "天津市西青区测试路1号",
+        "诊疗科目": "眼科、医学检验科",
+        "床位数": "20",
+        "类别": "综合医院",
+        "所有制形式": "公立",
+    }
+
+
+def test_tianjin_eye_evidence_comes_only_from_specialties(tmp_path: Path) -> None:
+    source_file = tmp_path / "tianjin-evidence.xlsx"
+    workbook = Workbook()
+    sheet = workbook.active
+    sheet.title = "医疗机构执业登记"
+    sheet["A1"] = "天津医疗机构执业登记信息"
+    sheet.append(list(TIANJIN_REGISTRATION_PREVIEW.expected_headers))
+    sheet.append(["2026-01-02", "天津测试医院A", "地址A", "眼科", 20, "综合医院", "公立"])
+    sheet.append(["2026-01-03", "天津测试眼科医院B", "地址B", "内科", 30, "三级眼科医院", "公立"])
+    workbook.save(source_file)
+
+    records = list(OpenDataFileAdapter(source_file, TIANJIN_REGISTRATION_PREVIEW).iter_records(
+        "120000", limit=10
+    ))
+    evidence = []
+    for index, record in enumerate(records):
+        parsed = parse_snapshot(f"synthetic-{index}", record.raw_payload)
+        assert parsed.record is not None
+        evidence.append(extract_ophthalmology_evidence(parsed.record))
+
+    assert [result.status for result in evidence] == ["evidence_found", "unknown"]
+    assert [item.field_name for item in evidence[0].evidence] == ["specialties"]
+    assert evidence[0].evidence[0].evidence_text == "眼科"
+    assert evidence[1].evidence == ()
