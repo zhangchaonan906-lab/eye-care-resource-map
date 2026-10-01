@@ -189,6 +189,8 @@ def _inspect_csv(
 ) -> tuple[tuple[str, ...], int, bool, tuple[str, ...]]:
     with path.open("r", encoding="utf-8-sig", newline="") as stream:
         reader = csv.reader(stream)
+        for _ in range(dataset.header_row - 1):
+            next(reader, None)
         raw_headers = next(reader, None)
         if raw_headers is None:
             raise ValueError("source file header schema is missing")
@@ -229,6 +231,8 @@ def _inspect_xlsx(
         else:
             raise ValueError("workbook has multiple sheets; a data_sheet_name is required")
         row_iter = sheet.iter_rows(values_only=True)
+        for _ in range(dataset.header_row - 1):
+            next(row_iter, None)
         raw_headers = next(row_iter, None)
         if raw_headers is None:
             raise ValueError("source file header schema is missing")
@@ -269,10 +273,13 @@ def _inspect_xls(
             raise ValueError("workbook has multiple sheets; a data_sheet_name is required")
         if sheet.nrows == 0:
             raise ValueError("source file header schema is missing")
-        headers = tuple(str(value) for value in sheet.row_values(0))
+        header_index = dataset.header_row - 1
+        if header_index >= sheet.nrows:
+            raise ValueError("source file header schema is missing")
+        headers = tuple(str(value) for value in sheet.row_values(header_index))
         row_count = 0
         validation_errors: list[str] = []
-        for row_index in range(1, sheet.nrows):
+        for row_index in range(header_index + 1, sheet.nrows):
             values = sheet.row_values(row_index)
             if any(value is not None and value != "" for value in values):
                 row_count += 1
@@ -294,8 +301,13 @@ class OpenDataDataset:
     stable_key_header: str | None = None
     data_sheet_name: str | None = None
     allow_zip_xlsx: bool = False
+    header_row: int = 1
 
     def __post_init__(self) -> None:
+        if not isinstance(self.header_row, int) or isinstance(self.header_row, bool):
+            raise ValueError("header_row must be a positive one-based row number")
+        if self.header_row < 1:
+            raise ValueError("header_row must be a positive one-based row number")
         raw_headers = [header for header, _canonical in self.field_mapping]
         if len(raw_headers) != len(set(raw_headers)):
             raise ValueError("field mapping contains duplicate source headers")
@@ -317,6 +329,24 @@ BEIJING_HOSPITALS = OpenDataDataset(
     expected_headers=("机构名称",),
     field_mapping=(("机构名称", "name"),),
     stable_key_header="机构名称",
+)
+
+TIANJIN_REGISTRATION_PREVIEW = OpenDataDataset(
+    source_key="tianjin-registration-local-preview",
+    source_name="天津市卫生健康委-医疗机构执业登记信息（本地预演）",
+    dataset_url="https://open.data.tj.gov.cn/sjj/8e3f7e670ea9492dbc480e2c68683ce5.htm",
+    expected_headers=("批准时间", "机构名称", "地址", "诊疗科目", "床位数", "类别", "所有制形式"),
+    field_mapping=(
+        ("批准时间", "approval_date"),
+        ("机构名称", "name"),
+        ("地址", "address"),
+        ("诊疗科目", "specialties"),
+        ("床位数", "bed_count"),
+        ("类别", "source_category"),
+        ("所有制形式", "ownership_type"),
+    ),
+    data_sheet_name="医疗机构执业登记",
+    header_row=2,
 )
 
 BEIJING_DESIGNATED_MEDICAL_INSTITUTIONS = OpenDataDataset(
@@ -432,6 +462,10 @@ class OpenDataFileAdapter(SourceAdapter):
             raise ValueError("region_code must contain six digits")
         return SourcePage(self._read_records(_MAX_RECORDS_PER_RUN), None)
 
+    def preview_records(self) -> tuple[RawRecord, ...]:
+        """Read local rows for an in-memory QA preview, including rows without a name."""
+        return self._read_records(_MAX_RECORDS_PER_RUN, require_name=False)
+
     def iter_pages(
         self,
         region_code: str,
@@ -451,7 +485,7 @@ class OpenDataFileAdapter(SourceAdapter):
             on_request()
         yield SourcePage(self._read_records(limit), None)
 
-    def _read_records(self, limit: int) -> tuple[RawRecord, ...]:
+    def _read_records(self, limit: int, *, require_name: bool = True) -> tuple[RawRecord, ...]:
         self._assert_fingerprint_unchanged()
         suffix = self._path.suffix.lower()
         if suffix == ".csv":
@@ -482,7 +516,7 @@ class OpenDataFileAdapter(SourceAdapter):
                 if source_fields[source_header] is not None
             }
             name = mapped.get("name")
-            if not isinstance(name, str) or not name.strip():
+            if require_name and (not isinstance(name, str) or not name.strip()):
                 raise ValueError("source row is missing a required hospital name")
             stable_value = row.get(self._dataset.stable_key_header or "")
             source_key = _string_value(stable_value)
@@ -504,10 +538,16 @@ class OpenDataFileAdapter(SourceAdapter):
 
     def _read_csv(self, limit: int) -> list[dict[str, object]]:
         with self._path.open("r", encoding="utf-8-sig", newline="") as stream:
-            reader = csv.DictReader(stream)
-            self._validate_headers(reader.fieldnames)
+            reader = csv.reader(stream)
+            for _ in range(self._dataset.header_row - 1):
+                next(reader, None)
+            headers = next(reader, None)
+            if headers is None:
+                raise ValueError("source file header schema is missing")
+            row_reader = csv.DictReader(stream, fieldnames=headers)
+            self._validate_headers(headers)
             rows: list[dict[str, object]] = []
-            for row in reader:
+            for row in row_reader:
                 if None in row or any(value is None for value in row.values()):
                     raise ValueError("source file row width does not match its approved headers")
                 if all(value is None or value == "" for value in row.values()):
@@ -544,6 +584,8 @@ class OpenDataFileAdapter(SourceAdapter):
             else:
                 raise ValueError("workbook has multiple sheets; a data_sheet_name is required")
             row_iter = sheet.iter_rows(values_only=True)
+            for _ in range(self._dataset.header_row - 1):
+                next(row_iter, None)
             headers = next(row_iter, None)
             names = self._validate_headers(headers)
             rows: list[dict[str, object]] = []
@@ -575,9 +617,12 @@ class OpenDataFileAdapter(SourceAdapter):
                 raise ValueError("workbook has multiple sheets; a data_sheet_name is required")
             if sheet.nrows == 0:
                 raise ValueError("source file header schema is missing")
-            headers = self._validate_headers(sheet.row_values(0))
+            header_index = self._dataset.header_row - 1
+            if header_index >= sheet.nrows:
+                raise ValueError("source file header schema is missing")
+            headers = self._validate_headers(sheet.row_values(header_index))
             rows: list[dict[str, object]] = []
-            for row_index in range(1, sheet.nrows):
+            for row_index in range(header_index + 1, sheet.nrows):
                 row: dict[str, object] = {}
                 for column_index, header in enumerate(headers):
                     cell = sheet.cell(row_index, column_index)
