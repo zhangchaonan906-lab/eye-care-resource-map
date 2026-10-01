@@ -106,15 +106,48 @@ WGS84 保持原值，GCJ-02 使用本地逆转换后转存 WGS84，UNKNOWN 系�
 
 数据文件必须由获授权的操作员在官方平台获取，并放在仓库之外。CLI 不登录平台、不下载文件、不存储账号密钥，也不抓取网页。
 
+### 文件预检与来源追溯
+
+拿到官方原始导出文件后，先运行只读预检。预检只读取本地文件，并以只读数据库事务检查来源准入、数据集页面和试点剩余容量；不会创建 import run、snapshot 或其他数据库记录。原始文件保持不变，SHA-256 由原始字节计算。
+
+```powershell
+py -m eye_collector.cli inspect-file `
+  --source beijing-open-data-designated-medical-institutions `
+  --file C:\secure\beijing-designated-medical-institutions.xlsx
+
+py -m eye_collector.cli inspect-file `
+  --source shenzhen-open-data-baoan-hospital-basic-information `
+  --file C:\secure\shenzhen-baoan-hospital-basic-information.xlsx
+```
+
+JSON 结果包含文件名、SHA-256、文件大小、格式、表头、完整数据行数、准入来源/预期 schema、schema 匹配结果、试点上限与剩余容量、单次运行上限、允许地区和 `ready_to_import`。支持 CSV/XLS/XLSX，最大 10 MiB；实际导入前还会再次核对文件指纹。行数上限为每次 150 条，试点来源组的累计上限由数据库实施。检查返回非零或 `ready_to_import=false` 时不得导入。
+
+每次文件导入的 `import_runs.id` 即 `import_run_id`。该记录通过 `source_id` 关联 `source_catalog`，并保存原始文件名（仅 basename）、原始字节 SHA-256、文件字节数、取得时间、数据集页面、目录记录的数据更新时间、操作员和固定采集方式 `official_portal_manual_download`。操作员与取得时间必须由实际下载人员提供，不能猜测；可用 `--operator` / `--obtained-at`，或设置 `PILOT_OPERATOR` / `PILOT_FILE_OBTAINED_AT`（ISO-8601 且带时区）。同一个文件可以重复运行；每次运行均保留 provenance，而 source snapshot 仍按 `(source_id, source_key, content_hash)` 幂等去重。
+
+确认预检、平台当前许可及 schema 后，先执行 dry-run 并审核输出：
+
 ```powershell
 $env:PILOT_REAL_DATA = "true"
+$env:PILOT_OPERATOR = "<实际操作员标识>"
+$env:PILOT_FILE_OBTAINED_AT = "<实际下载时间，例如 2026-10-01T10:00:00+08:00>"
 py -m eye_collector.cli pilot `
   --source beijing-open-data-designated-medical-institutions `
   --region 110000 `
-  --file C:\secure\official-export.csv `
-  --limit 100 `
+  --file C:\secure\beijing-designated-medical-institutions.xlsx `
+  --limit 50 `
+  --dry-run
+
+py -m eye_collector.cli pilot `
+  --source shenzhen-open-data-baoan-hospital-basic-information `
+  --region 440306 `
+  --file C:\secure\shenzhen-baoan-hospital-basic-information.xlsx `
+  --limit 27 `
   --dry-run
 ```
+
+北京首批导入范围为 50–150 条；先用 `--limit 50` 做审核样本，再依据 dry-run 和人工审核决定是否正式运行。深圳数据集约 27 条，不能为凑足 50 条而复制或合成记录；正式运行按官方文件的实际记录数设置 limit，并在导入后检查全部记录。审核 dry-run 后，删除 `--dry-run` 才会写入。之后可运行 `python -m eye_collector.cli process` 执行现有 P3 ETL，再按 QA 清单人工检查记录；眼科证据不足时必须保持 `unknown`。没有真实文件时，不运行上述导入命令，不以 fixture 代替。
+
+QA 清单：医院名称、地址、区、来源分类、注册/参考 ID、来源 URL、原始字段映射、重复状态和眼科证据状态。北京至少人工抽样 50 条；深圳少于 50 条时检查全部实际记录。检查结果需标明数据文件 SHA-256 与 import run，便于回溯。
 
 可选来源为 `beijing-open-data-hospitals`、`beijing-open-data-designated-medical-institutions` 和 `shenzhen-open-data-baoan-hospital-basic-information`。深圳必须使用 `--region 440306`。文件适配器要求官方字段名精确匹配；额外、缺失或重复的表头会拒绝整个导入。CSV/XLS/XLSX 都支持，文件上限 10 MiB、每次导入上限 150 条，且数据库对本试点三项来源累计最多允许 300 条 source records。深圳原始数据不允许放入 GitHub、原始下载镜像、导出接口或转售。
 

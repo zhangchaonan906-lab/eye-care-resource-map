@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any
+from datetime import date, datetime
+from typing import Any, Literal
 
 
 @dataclass(frozen=True, slots=True)
@@ -13,6 +14,39 @@ class SourceRegistration:
     permitted_fields: frozenset[str]
     access_policy: str | None
     status: str
+    dataset_page: str | None = None
+    source_updated_at: date | None = None
+    pilot_group_record_limit: int | None = None
+    pilot_group_record_count: int = 0
+
+
+@dataclass(frozen=True, slots=True)
+class FileImportProvenance:
+    original_filename: str
+    file_sha256: str
+    file_size_bytes: int
+    obtained_at: datetime
+    operator: str
+    acquisition_method: Literal["official_portal_manual_download"]
+
+    def __post_init__(self) -> None:
+        if (
+            not self.original_filename
+            or "/" in self.original_filename
+        ):
+            raise ValueError("original_filename must contain a basename only")
+        if "\\" in self.original_filename:
+            raise ValueError("original_filename must not contain a path")
+        if len(self.file_sha256) != 64 or any(
+            char not in "0123456789abcdef" for char in self.file_sha256
+        ):
+            raise ValueError("file_sha256 must be a lowercase SHA-256 hex digest")
+        if self.file_size_bytes < 1:
+            raise ValueError("file_size_bytes must be positive")
+        if self.obtained_at.tzinfo is None or self.obtained_at.utcoffset() is None:
+            raise ValueError("obtained_at must include a timezone offset")
+        if not self.operator.strip():
+            raise ValueError("operator must not be empty")
 
 
 @dataclass(frozen=True, slots=True)

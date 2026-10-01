@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import csv
+import hashlib
 import os
+from datetime import date, datetime
 from pathlib import Path
 
 import psycopg
@@ -10,11 +12,15 @@ import pytest
 from eye_collector.db import PostgresRepository
 from eye_collector.exceptions import SourcePolicyError
 from eye_collector.http import HttpClient
-from eye_collector.models import SourceDescriptor, SourcePage
+from eye_collector.models import FileImportProvenance, SourceDescriptor, SourcePage
 from eye_collector.policy import SourcePolicy
 from eye_collector.runner import CollectorRunner
 from eye_collector.sources.fixture import FixtureSourceAdapter, FixtureTransport
-from eye_collector.sources.open_data_file import BEIJING_HOSPITALS, OpenDataFileAdapter
+from eye_collector.sources.open_data_file import (
+    BEIJING_DESIGNATED_MEDICAL_INSTITUTIONS,
+    BEIJING_HOSPITALS,
+    OpenDataFileAdapter,
+)
 
 pytestmark = pytest.mark.database
 
@@ -116,11 +122,24 @@ def test_database_approved_manual_file_snapshot_is_idempotent(tmp_path: Path) ->
         writer = csv.writer(stream)
         writer.writerow(["机构名称"])
         writer.writerow(["数据库集成测试医院"])
+    original_bytes = source_file.read_bytes()
+    provenance = FileImportProvenance(
+        original_filename=source_file.name,
+        file_sha256=hashlib.sha256(original_bytes).hexdigest(),
+        file_size_bytes=len(original_bytes),
+        obtained_at=datetime.fromisoformat("2026-10-01T10:00:00+08:00"),
+        operator="integration-test-operator",
+        acquisition_method="official_portal_manual_download",
+    )
     adapter = OpenDataFileAdapter(source_file, BEIJING_HOSPITALS)
     repository = PostgresRepository.connect(database_url())
     try:
-        first = CollectorRunner(repository, adapter).run("110000", limit=1)
-        second = CollectorRunner(repository, adapter).run("110000", limit=1)
+        first = CollectorRunner(repository, adapter, file_provenance=provenance).run(
+            "110000", limit=1
+        )
+        second = CollectorRunner(repository, adapter, file_provenance=provenance).run(
+            "110000", limit=1
+        )
     finally:
         repository.close()
 
@@ -137,6 +156,102 @@ def test_database_approved_manual_file_snapshot_is_idempotent(tmp_path: Path) ->
             (BEIJING_HOSPITALS.source_name, "数据库集成测试医院"),
         ).fetchone()
     assert row == (1, "数据库集成测试医院", BEIJING_HOSPITALS.dataset_url)
+
+
+def test_database_file_provenance_is_linked_and_replay_keeps_snapshots_idempotent(
+    tmp_path: Path,
+) -> None:
+    source_file = tmp_path / "official-designated.csv"
+    with source_file.open("w", newline="", encoding="utf-8-sig") as stream:
+        writer = csv.writer(stream)
+        writer.writerow(BEIJING_DESIGNATED_MEDICAL_INSTITUTIONS.expected_headers)
+        writer.writerow(["真实名称格式测试医院", "测试地址", "三级", "综合", "东城区", "12345"])
+    original_bytes = source_file.read_bytes()
+    provenance = FileImportProvenance(
+        original_filename=source_file.name,
+        file_sha256=hashlib.sha256(original_bytes).hexdigest(),
+        file_size_bytes=len(original_bytes),
+        obtained_at=datetime.fromisoformat("2026-10-01T10:00:00+08:00"),
+        operator="integration-test-operator",
+        acquisition_method="official_portal_manual_download",
+    )
+    adapter = OpenDataFileAdapter(source_file, BEIJING_DESIGNATED_MEDICAL_INSTITUTIONS)
+    repository = PostgresRepository.connect(database_url())
+    try:
+        first = CollectorRunner(repository, adapter, file_provenance=provenance).run(
+            "110000", limit=1
+        )
+        second = CollectorRunner(repository, adapter, file_provenance=provenance).run(
+            "110000", limit=1
+        )
+    finally:
+        repository.close()
+
+    assert (first.status, first.counts.inserted) == ("succeeded", 1)
+    assert (second.status, second.counts.unchanged) == ("succeeded", 1)
+    assert source_file.read_bytes() == original_bytes
+    with psycopg.connect(database_url(), autocommit=True) as connection:
+        rows = connection.execute(
+            """
+            SELECT count(*), count(DISTINCT ir.id), min(ir.file_sha256),
+                   min(ir.file_original_filename), min(ir.file_size_bytes),
+                   min(ir.file_dataset_page), min(ir.file_source_updated_at),
+                   min(ir.file_operator), min(ir.file_acquisition_method),
+                   min(extract(epoch FROM ir.file_obtained_at))
+            FROM app_private.import_runs AS ir
+            JOIN app_private.source_catalog AS sources ON sources.id = ir.source_id
+            WHERE sources.name = %s AND ir.file_sha256 = %s
+            """,
+            (BEIJING_DESIGNATED_MEDICAL_INSTITUTIONS.source_name, provenance.file_sha256),
+        ).fetchone()
+        snapshot_count = connection.execute(
+            """
+            SELECT count(*) FROM app_private.source_records AS records
+            WHERE records.import_run_id IN (
+              SELECT id FROM app_private.import_runs WHERE file_sha256 = %s
+            )
+            """,
+            (provenance.file_sha256,),
+        ).fetchone()
+    assert rows == (
+        2,
+        2,
+        provenance.file_sha256,
+        source_file.name,
+        len(original_bytes),
+        BEIJING_DESIGNATED_MEDICAL_INSTITUTIONS.dataset_url,
+        date(2026, 8, 13),
+        "integration-test-operator",
+        "official_portal_manual_download",
+        pytest.approx(provenance.obtained_at.timestamp()),
+    )
+    assert snapshot_count == (1,)
+
+
+def test_database_inspect_source_is_read_only() -> None:
+    descriptor = SourceDescriptor(
+        BEIJING_DESIGNATED_MEDICAL_INSTITUTIONS.source_key,
+        BEIJING_DESIGNATED_MEDICAL_INSTITUTIONS.source_name,
+        BEIJING_DESIGNATED_MEDICAL_INSTITUTIONS.dataset_url,
+        access_method="file",
+    )
+    repository = PostgresRepository.connect(database_url())
+    try:
+        with psycopg.connect(database_url(), autocommit=True) as connection:
+            before = connection.execute("SELECT count(*) FROM app_private.import_runs").fetchone()
+        registration = repository.inspect_source(descriptor)
+        with psycopg.connect(database_url(), autocommit=True) as connection:
+            after = connection.execute("SELECT count(*) FROM app_private.import_runs").fetchone()
+    finally:
+        repository.close()
+
+    assert registration is not None
+    assert registration.status == "approved"
+    assert registration.access_policy == "manual_only"
+    assert registration.pilot_group_record_limit == 300
+    assert registration.dataset_page == descriptor.catalog_url
+    assert registration.source_updated_at.isoformat() == "2026-08-13"
+    assert before == after
 
 
 def test_database_failed_run_is_closed_and_error_is_redacted() -> None:

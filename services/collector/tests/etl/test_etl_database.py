@@ -85,7 +85,8 @@ def test_etl_pipeline_persists_traceable_candidates_and_is_idempotent(
         ).fetchall()
         assert len(raw_before) == 8
         published_before = admin.execute(
-            "SELECT count(*) FROM app_private.facilities WHERE verification_status = 'published'"
+            "SELECT count(*) FROM app_private.facilities "
+            "WHERE verification_status = 'published'"
         ).fetchone()[0]
 
     repository = ETLRepository.connect(etl_url)

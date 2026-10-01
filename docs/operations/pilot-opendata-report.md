@@ -1,6 +1,6 @@
 # P5 Official Open-Data Pilot Status
 
-**Status: BLOCKED — legal/source qualification and import framework are ready; real pilot files are unavailable to this execution environment.**
+**Status: WAITING_FOR_FILES — source approval and safe file-readiness framework are ready; the official Beijing and Shenzhen exports are not present in the current environment.**
 
 ## Current counts
 
@@ -13,12 +13,23 @@
 - Total pilot snapshots: 0 of 300 maximum.
 - Coordinates: deferred; no real geocoder calls and no production coordinates stored.
 - Facilities published: no.
+- File preflight: read-only `inspect-file` is implemented; no official export has been inspected yet.
+- Provenance: migration 008 records original filename, raw-byte SHA-256, size, obtained-at, approved dataset page/update date, operator, and acquisition method on each import run.
 
 ## Why import is blocked
 
-The Beijing platform FAQ requires portal registration to download datasets or call APIs. The Shenzhen agreement assigns free access/reuse rights to successful registered users. No authorized platform account or official export file is available in the current execution environment. No login, registration, account credential, authentication bypass, web scraping, third-party mirror, or proxy was used.
+No official CSV/XLS/XLSX for either selected dataset was present in the project or searched user file locations. Unrelated spreadsheets are not treated as source data. No login, registration, account credential, authentication bypass, web scraping, third-party mirror, or proxy was used. The Beijing platform FAQ requires portal registration to download datasets or call APIs. The Shenzhen agreement assigns free access/reuse rights to successful registered users.
 
-The collector now supports manual official-file import for the approved datasets. The operator must obtain the source files through an authorized portal account, keep them outside the repository, verify the current dataset page and license before import, and run a dry-run first. After an authorized file is supplied, the selected sample is capped at 150 Beijing rows and all 27 Shenzhen rows; the database enforces a shared 300-record ceiling.
+The collector now supports read-only inspection and manual official-file import for the approved datasets. The operator must provide both official exports through an authorized portal account, keep them outside the repository, verify the current dataset page and license, inspect them, and review a dry-run before import. Beijing begins with 50 rows and may expand to 150 after review. Shenzhen imports only the actual file rows (about 27) and all are QA-reviewed; no synthetic rows are added. The database enforces the shared pilot record ceiling.
+
+## Required user action
+
+Provide these original files from their official platforms:
+
+1. Beijing `定点医疗机构信息` official CSV/XLS/XLSX.
+2. Shenzhen `宝安区-医院基本信息` official CSV/XLS/XLSX.
+
+Keep the original bytes unchanged and outside the repository. After they arrive, run `inspect-file` → dry-run → import → P3 ETL → QA sample/report. No production data has been imported during this readiness work.
 
 ## Rights/attribution controls
 

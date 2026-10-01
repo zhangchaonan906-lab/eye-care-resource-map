@@ -7,6 +7,7 @@ from typing import Protocol
 from eye_collector.hashing import canonical_sha256
 from eye_collector.logging_utils import safe_error_summary
 from eye_collector.models import (
+    FileImportProvenance,
     ImportCounts,
     ImportResult,
     RawRecord,
@@ -23,6 +24,14 @@ class CollectorRepository(Protocol):
         descriptor: SourceDescriptor,
         region_code: str,
         policy: SourcePolicy,
+    ) -> tuple[str, SourceRegistration]: ...
+
+    def start_approved_file_run(
+        self,
+        descriptor: SourceDescriptor,
+        region_code: str,
+        policy: SourcePolicy,
+        provenance: FileImportProvenance,
     ) -> tuple[str, SourceRegistration]: ...
 
     def snapshot_exists(self, source_id: str, record: RawRecord, content_hash: str) -> bool: ...
@@ -48,11 +57,13 @@ class CollectorRunner:
         *,
         policy: SourcePolicy | None = None,
         logger: logging.Logger | None = None,
+        file_provenance: FileImportProvenance | None = None,
     ) -> None:
         self._repository = repository
         self._adapter = adapter
         self._policy = policy or SourcePolicy()
         self._logger = logger or logging.getLogger("eye_collector.runner")
+        self._file_provenance = file_provenance
 
     def run(
         self,
@@ -75,9 +86,14 @@ class CollectorRunner:
             nonlocal counts
             counts = replace(counts, requested=counts.requested + 1)
 
-        run_id, registration = self._repository.start_approved_run(
-            descriptor, region_code, self._policy
-        )
+        if self._file_provenance is None:
+            run_id, registration = self._repository.start_approved_run(
+                descriptor, region_code, self._policy
+            )
+        else:
+            run_id, registration = self._repository.start_approved_file_run(
+                descriptor, region_code, self._policy, self._file_provenance
+            )
         try:
             self._log(
                 logging.INFO,
@@ -93,9 +109,7 @@ class CollectorRunner:
                 source=registration,
                 region_code=region_code,
             )
-            for page in self._adapter.iter_pages(
-                region_code, limit, on_request=count_request
-            ):
+            for page in self._adapter.iter_pages(region_code, limit, on_request=count_request):
                 counts = replace(counts, received=counts.received + len(page.records))
                 for record in page.records:
                     if limit is not None and requested_records >= limit:

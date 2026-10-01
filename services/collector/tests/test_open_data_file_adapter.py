@@ -193,3 +193,13 @@ def test_shenzhen_strengths_field_can_supply_explicit_eye_evidence_without_conta
     assert "specialties" in source_record.raw_payload
     assert "phone" not in source_record.raw_payload
     assert "email" not in source_record.raw_payload
+
+
+def test_adapter_rejects_file_changed_after_fingerprint_was_captured(tmp_path: Path) -> None:
+    source_file = tmp_path / "hospitals.csv"
+    write_csv(source_file, ("机构名称",), [("原始医院",)])
+    adapter = OpenDataFileAdapter(source_file, BEIJING_HOSPITALS)
+    write_csv(source_file, ("机构名称",), [("替换后的医院",)])
+
+    with pytest.raises(ValueError, match="changed after fingerprint"):
+        list(adapter.iter_records("110000", limit=1))

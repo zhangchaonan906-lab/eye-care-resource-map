@@ -6,6 +6,7 @@ import logging
 import os
 import sys
 from collections.abc import Sequence
+from datetime import datetime
 from typing import cast
 from uuid import UUID
 
@@ -19,7 +20,7 @@ from eye_collector.geocoding.providers.fixture import FixtureGeocoder, FixtureGe
 from eye_collector.geocoding.repository import GeocodeRepository
 from eye_collector.http import HttpClient
 from eye_collector.logging_utils import JsonLogFormatter, safe_error_summary
-from eye_collector.models import ImportResult
+from eye_collector.models import FileImportProvenance, ImportResult, SourceDescriptor
 from eye_collector.runner import CollectorRunner
 from eye_collector.sources.fixture import FixtureSourceAdapter, FixtureTransport
 from eye_collector.sources.open_data_file import (
@@ -28,6 +29,7 @@ from eye_collector.sources.open_data_file import (
     SHENZHEN_BAOAN_HOSPITALS,
     OpenDataDataset,
     OpenDataFileAdapter,
+    inspect_open_data_file,
 )
 
 _OPEN_DATA_DATASETS: dict[str, tuple[OpenDataDataset, str]] = {
@@ -67,14 +69,19 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="eye-collector")
     commands = parser.add_subparsers(dest="command", required=True)
     run = commands.add_parser("run", help="run one approved source import")
-    run.add_argument(
-        "--source", required=True, choices=("fixture", *_OPEN_DATA_DATASETS.keys())
-    )
+    run.add_argument("--source", required=True, choices=("fixture", *_OPEN_DATA_DATASETS.keys()))
     run.add_argument("--region", required=True, type=_region_code)
     run.add_argument("--file", help="operator-downloaded official CSV, XLS, or XLSX file")
     run.add_argument("--limit", type=_positive_int)
     run.add_argument("--dry-run", action="store_true")
     run.add_argument("--fixture-revision", choices=("stable", "updated"), default="stable")
+    run.add_argument("--operator")
+    run.add_argument(
+        "--obtained-at", help="official file acquisition time in ISO-8601 with offset"
+    )
+    inspect = commands.add_parser("inspect-file", help="read-only official file preflight")
+    inspect.add_argument("--source", required=True, choices=tuple(_OPEN_DATA_DATASETS))
+    inspect.add_argument("--file", required=True, help="operator-downloaded official source file")
     process = commands.add_parser(
         "process", help="process approved source snapshots through P3 ETL"
     )
@@ -94,6 +101,10 @@ def build_parser() -> argparse.ArgumentParser:
     pilot.add_argument("--file", required=True, help="operator-downloaded official source file")
     pilot.add_argument("--limit", required=True, type=_positive_int)
     pilot.add_argument("--dry-run", action="store_true")
+    pilot.add_argument("--operator")
+    pilot.add_argument(
+        "--obtained-at", help="official file acquisition time in ISO-8601 with offset"
+    )
     return parser
 
 
@@ -110,12 +121,42 @@ def _result_json(result: ImportResult) -> str:
     return json.dumps(
         {
             "run_id": result.run_id,
+            "import_run_id": result.run_id,
             "status": result.status,
             "dry_run": result.dry_run,
             "counts": result.counts.as_dict(),
         },
         ensure_ascii=False,
         separators=(",", ":"),
+    )
+
+
+def _file_provenance(
+    args: argparse.Namespace, adapter: OpenDataFileAdapter
+) -> FileImportProvenance:
+    operator = (args.operator or os.environ.get("PILOT_OPERATOR", "")).strip()
+    obtained_raw = args.obtained_at or os.environ.get("PILOT_FILE_OBTAINED_AT", "")
+    if not operator:
+        raise ValueError("PILOT_OPERATOR or --operator is required for file provenance")
+    if not obtained_raw:
+        raise ValueError(
+            "PILOT_FILE_OBTAINED_AT or --obtained-at is required for file provenance"
+        )
+    try:
+        obtained_at = datetime.fromisoformat(obtained_raw.replace("Z", "+00:00"))
+    except ValueError as error:
+        raise ValueError(
+            "obtained-at must be an ISO-8601 timestamp with timezone offset"
+        ) from error
+    if obtained_at.tzinfo is None or obtained_at.utcoffset() is None:
+        raise ValueError("obtained-at must include a timezone offset")
+    return FileImportProvenance(
+        original_filename=adapter.original_filename,
+        file_sha256=adapter.file_sha256,
+        file_size_bytes=adapter.file_size_bytes,
+        obtained_at=obtained_at,
+        operator=operator,
+        acquisition_method="official_portal_manual_download",
     )
 
 
@@ -131,6 +172,73 @@ def main(argv: Sequence[str] | None = None) -> int:
             if os.environ.get("PILOT_REAL_DATA") != "true":
                 raise ValueError("pilot requires explicit PILOT_REAL_DATA=true opt-in")
             args.command = "run"
+        if args.command == "inspect-file":
+            dataset, allowed_region = _OPEN_DATA_DATASETS[args.source]
+            inspection = inspect_open_data_file(args.file, dataset)
+            config = CollectorConfig.from_env()
+            repository = PostgresRepository.connect(config.database_url)
+            descriptor = SourceDescriptor(
+                dataset.source_key,
+                dataset.source_name,
+                dataset.dataset_url,
+                access_method="file",
+            )
+            registration = repository.inspect_source(descriptor)
+            configured_limit = (
+                registration.pilot_group_record_limit if registration is not None else None
+            )
+            current_count = registration.pilot_group_record_count if registration else 0
+            remaining_capacity = (
+                max(configured_limit - current_count, 0) if configured_limit is not None else 0
+            )
+            max_importable_records = min(
+                inspection.row_count, remaining_capacity, 150
+            )
+            approved = bool(
+                registration is not None
+                and registration.status == "approved"
+                and registration.access_policy == "manual_only"
+                and registration.dataset_page == dataset.dataset_url
+            )
+            ready = bool(
+                approved
+                and inspection.schema_match
+                and max_importable_records > 0
+            )
+            print(
+                json.dumps(
+                    {
+                        "filename": inspection.original_filename,
+                        "sha256": inspection.file_sha256,
+                        "file_size_bytes": inspection.file_size_bytes,
+                        "detected_format": inspection.detected_format,
+                        "headers": list(inspection.headers),
+                        "row_count": inspection.row_count,
+                        "approved_dataset": dataset.source_name,
+                        "dataset_page": (
+                            registration.dataset_page if registration else None
+                        ),
+                        "source_updated_at": (
+                            registration.source_updated_at.isoformat()
+                            if registration and registration.source_updated_at
+                            else None
+                        ),
+                        "source_status": registration.status if registration else "not_registered",
+                        "expected_schema": list(inspection.expected_schema),
+                        "schema_match": inspection.schema_match,
+                        "configured_pilot_limit": configured_limit,
+                        "current_pilot_records": current_count,
+                        "remaining_pilot_capacity": remaining_capacity,
+                        "max_records_per_run": 150,
+                        "max_importable_records": max_importable_records,
+                        "allowed_region": allowed_region,
+                        "ready_to_import": ready,
+                    },
+                    ensure_ascii=False,
+                    separators=(",", ":"),
+                )
+            )
+            return 0 if ready else 1
         if args.command == "geocode":
             geocode_config = GeocodingConfig.from_env()
             geocode_repository = GeocodeRepository.connect(geocode_config.database_url)
@@ -181,8 +289,9 @@ def main(argv: Sequence[str] | None = None) -> int:
                 raise ValueError("region does not match the approved dataset scope")
             config = CollectorConfig.from_env()
             file_adapter = OpenDataFileAdapter(args.file, dataset)
+            file_provenance = _file_provenance(args, file_adapter)
             repository = PostgresRepository.connect(config.database_url)
-            result = CollectorRunner(repository, file_adapter).run(
+            result = CollectorRunner(repository, file_adapter, file_provenance=file_provenance).run(
                 cast(str, args.region),
                 limit=args.limit,
                 dry_run=args.dry_run,
