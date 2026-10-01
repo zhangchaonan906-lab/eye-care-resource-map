@@ -92,12 +92,15 @@ docs/operations/                         运行、回滚、抽检手册
 | `source_records` | `id, source_id, source_key, raw_payload, source_url, collected_at, content_hash, import_run_id` | 原始快照；`source_id + source_key + content_hash` 幂等 |
 | `facility_evidence` | `facility_id, source_record_id, field_name, field_value, confidence, reviewed_at?` | 字段级溯源；眼科服务、等级、电话等均有证据 |
 | `candidate_records` | `id, source_record_id, parsed_fields, match_status, proposed_facility_id?` | 未发布工作区 |
-| `duplicate_cases` | `id, candidate_ids, reason, score, resolution, reviewer_id?, resolved_at?` | 疑似合并人工决策 |
+| `duplicate_cases` | `id, reason, score, resolution, reviewer_id?, resolved_at?` | 疑似合并人工决策 |
+| `duplicate_case_candidates` | `duplicate_case_id, candidate_record_id` | 关联表；复合主键防重复成员，外键保证候选存在 |
 | `import_runs` | `id, source_id, region_code, started_at, ended_at, status, counts, error_summary` | 任务审计和重跑 |
 | `audit_events` | `id, actor_id, entity, entity_id, action, before, after, created_at` | 发布、合并、退回、撤销审计 |
 | `regions` | `adcode, name, level, parent_adcode, version, valid_from?, valid_to?` | 版本化行政区映射；不能只按名称关联 |
 
 `facilities` 对已发布记录建立地区、分类、标准名索引；`facility_locations.geog_wgs84` 建 GiST 索引；搜索可从 PostgreSQL trigram/full-text 起步，必要时再引入专用搜索服务。Supabase 可启用 PostGIS，官方建议扩展放在独立 schema；`ST_DWithin` 可利用空间索引做半径筛选。[Supabase PostGIS 指南](https://supabase.com/docs/guides/database/extensions/postgis)、[PostGIS 半径查询](https://postgis.net/documentation/tips/st-dwithin/)
+
+重复案件的候选成员通过 `duplicate_case_candidates` 关联，pending 案件可以逐步组装；进入已解决状态时，事务必须确认至少有两条有效候选关联。
 
 ## 6. 标准化、去重、坐标和核验流水线
 
