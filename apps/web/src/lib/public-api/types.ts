@@ -6,6 +6,9 @@ export const FACILITY_CATEGORIES = [
   "unknown",
 ] as const;
 
+export const MIN_FACILITY_DETAIL_ZOOM = 7;
+export const MAX_MAP_ZOOM = 24;
+
 export type FacilityCategory = (typeof FACILITY_CATEGORIES)[number];
 
 export type PublicFacility = {
@@ -26,6 +29,7 @@ export type PublicFacility = {
 export type Page<T> = { items: T[]; nextCursor: string | null };
 export type FacilityListInput = {
   bbox: [number, number, number, number];
+  zoom: number;
   category?: FacilityCategory;
   region?: string;
   limit: number;

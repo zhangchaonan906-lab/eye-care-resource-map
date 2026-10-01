@@ -1,5 +1,11 @@
 import type { PublicFacilityRepository } from "./types";
-import { parseFacilityQuery, parseSearchQuery, parseUuid, ValidationError } from "./validation";
+import {
+  parseFacilityQuery,
+  parseSearchQuery,
+  parseUuid,
+  ValidationError,
+  ViewportTooLargeError,
+} from "./validation";
 
 type ErrorBody = { data: null; meta: null; error: { code: string; message: string } };
 
@@ -21,6 +27,9 @@ export async function facilitiesHandler(request: Request, repository: PublicFaci
     const page = await repository.list(input);
     return json({ data: page.items, meta: { count: page.items.length, nextCursor: page.nextCursor }, error: null });
   } catch (error) {
+    if (error instanceof ViewportTooLargeError) {
+      return json({ data: null, meta: null, error: { code: "VIEWPORT_TOO_LARGE", message: error.message } }, 400);
+    }
     if (error instanceof ValidationError) return badRequest(error);
     return internalErrorResponse();
   }

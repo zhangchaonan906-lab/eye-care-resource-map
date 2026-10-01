@@ -30,7 +30,7 @@ describe("GET /api/facilities", () => {
   it("requires valid bbox and rejects malformed or out-of-range bounds", async () => {
     const repo = repository();
     for (const query of ["", "bbox=1,2,3", "bbox=1,2,3,no", "bbox=181,0,182,1", "bbox=2,0,1,1", "bbox=0,91,1,92"]) {
-      const response = await facilitiesHandler(new Request(`https://local.test/api/facilities?${query}`), repo);
+      const response = await facilitiesHandler(new Request(`https://local.test/api/facilities?${query}&zoom=10`), repo);
       expect(response.status).toBe(400);
     }
     expect(repo.list).not.toHaveBeenCalled();
@@ -39,22 +39,22 @@ describe("GET /api/facilities", () => {
   it("bounds limits, validates category/region/cursor, and returns empty results safely", async () => {
     const repo = repository();
     for (const query of [
-      "bbox=1,2,3,4&limit=0",
-      "bbox=1,2,3,4&limit=501",
-      "bbox=1,2,3,4&category=not-a-category",
-      "bbox=1,2,3,4&region=abc",
-      "bbox=1,2,3,4&cursor=not-base64",
+      "bbox=1,2,3,4&zoom=10&limit=0",
+      "bbox=1,2,3,4&zoom=10&limit=501",
+      "bbox=1,2,3,4&zoom=10&category=not-a-category",
+      "bbox=1,2,3,4&zoom=10&region=abc",
+      "bbox=1,2,3,4&zoom=10&cursor=not-base64",
     ]) {
       expect((await facilitiesHandler(new Request(`https://local.test/api/facilities?${query}`), repo)).status).toBe(400);
     }
-    const response = await facilitiesHandler(new Request("https://local.test/api/facilities?bbox=116,39,117,40"), repo);
+    const response = await facilitiesHandler(new Request("https://local.test/api/facilities?bbox=116,39,117,40&zoom=10"), repo);
     expect(response.status).toBe(200);
     expect(await response.json()).toMatchObject({ data: [], meta: { count: 0, nextCursor: null }, error: null });
   });
 
   it("returns allowlisted data and a stable envelope", async () => {
     const repo = repository({ list: vi.fn().mockResolvedValue({ items: [facility], nextCursor: "next" }) });
-    const response = await facilitiesHandler(new Request("https://local.test/api/facilities?bbox=116,39,117,40&limit=3"), repo);
+    const response = await facilitiesHandler(new Request("https://local.test/api/facilities?bbox=116,39,117,40&zoom=10&limit=3"), repo);
     expect(response.status).toBe(200);
     const body = await response.json();
     expect(body).toMatchObject({ data: [facility], meta: { count: 1, nextCursor: "next" }, error: null });
@@ -63,11 +63,49 @@ describe("GET /api/facilities", () => {
 
   it("maps internal errors to generic 500 without leaking details", async () => {
     const repo = repository({ list: vi.fn().mockRejectedValue(new Error("select * from private_table")) });
-    const response = await facilitiesHandler(new Request("https://local.test/api/facilities?bbox=116,39,117,40"), repo);
+    const response = await facilitiesHandler(new Request("https://local.test/api/facilities?bbox=116,39,117,40&zoom=10"), repo);
     expect(response.status).toBe(500);
     const body = await response.json();
     expect(body).toEqual({ data: null, meta: null, error: { code: "INTERNAL_ERROR", message: "服务暂不可用" } });
     expect(JSON.stringify(body)).not.toContain("private_table");
+  });
+
+  it("requires a finite zoom from 0 to 24 and returns no facility detail below zoom 7", async () => {
+    const repo = repository();
+    for (const zoom of [undefined, "NaN", "abc", "25"]) {
+      const url = new URL("https://local.test/api/facilities?bbox=116,39,117,40");
+      if (zoom !== undefined) url.searchParams.set("zoom", zoom);
+      const response = await facilitiesHandler(new Request(url), repo);
+      expect(response.status).toBe(400);
+      expect((await response.json()).error.code).toBe("INVALID_ARGUMENT");
+    }
+
+    const response = await facilitiesHandler(
+      new Request("https://local.test/api/facilities?bbox=116,39,117,40&zoom=6.99"),
+      repo,
+    );
+    expect(response.status).toBe(400);
+    expect(await response.json()).toMatchObject({
+      error: { code: "VIEWPORT_TOO_LARGE", message: "请放大地图后查看医疗机构" },
+    });
+    expect(repo.list).not.toHaveBeenCalled();
+  });
+
+  it("rejects large spans even at high zoom, while allowing a city viewport and empty result", async () => {
+    const repo = repository();
+    const world = await facilitiesHandler(
+      new Request("https://local.test/api/facilities?bbox=-180,-90,180,90&zoom=20"),
+      repo,
+    );
+    expect(world.status).toBe(400);
+    expect((await world.json()).error.code).toBe("VIEWPORT_TOO_LARGE");
+
+    const city = await facilitiesHandler(
+      new Request("https://local.test/api/facilities?bbox=116,39,117,40&zoom=10"),
+      repo,
+    );
+    expect(city.status).toBe(200);
+    expect((await city.json()).data).toEqual([]);
   });
 });
 

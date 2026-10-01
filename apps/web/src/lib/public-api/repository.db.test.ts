@@ -131,13 +131,13 @@ afterAll(async () => {
 
 describe("PostGIS public facility repository", () => {
   it("returns only three in-bounds synthetic facilities, with category and region filters", async () => {
-    const page = await repository.list({ bbox: [116, 39, 117, 40], limit: 10 });
+    const page = await repository.list({ bbox: [116, 39, 117, 40], zoom: 10, limit: 10 });
     expect(page.items).toHaveLength(3);
     expect(page.items.map((item) => item.id).sort()).toEqual(ids.facilities.slice(0, 3).sort());
     expect(JSON.stringify(page)).not.toContain("PRIVATE_PERSON_SENTINEL");
-    expect((await repository.list({ bbox: [116, 39, 117, 40], limit: 10, category: "eye_clinic" })).items).toHaveLength(1);
-    expect((await repository.list({ bbox: [116, 39, 117, 40], limit: 10, region: "11" })).items).toHaveLength(2);
-    expect((await repository.list({ bbox: [-10, -10, -9, -9], limit: 10 })).items).toHaveLength(0);
+    expect((await repository.list({ bbox: [116, 39, 117, 40], zoom: 10, limit: 10, category: "eye_clinic" })).items).toHaveLength(1);
+    expect((await repository.list({ bbox: [116, 39, 117, 40], zoom: 10, limit: 10, region: "11" })).items).toHaveLength(2);
+    expect((await repository.list({ bbox: [-10, -10, -9, -9], zoom: 10, limit: 10 })).items).toHaveLength(0);
   });
 
   it("supports detail lookup and exact/prefix normalized-name search", async () => {
@@ -148,10 +148,10 @@ describe("PostGIS public facility repository", () => {
   });
 
   it("continues keyset pages without duplicates and rejects private table reads", async () => {
-    const first = await repository.list({ bbox: [116, 39, 117, 40], limit: 2 });
+    const first = await repository.list({ bbox: [116, 39, 117, 40], zoom: 10, limit: 2 });
     const afterId = decodeCursor(first.nextCursor, "id");
     expect(afterId?.kind).toBe("id");
-    const second = await repository.list({ bbox: [116, 39, 117, 40], limit: 2, cursor: afterId?.id });
+    const second = await repository.list({ bbox: [116, 39, 117, 40], zoom: 10, limit: 2, cursor: afterId?.id });
     expect([...first.items, ...second.items]).toHaveLength(3);
     expect(new Set([...first.items, ...second.items].map((item) => item.id)).size).toBe(3);
 
