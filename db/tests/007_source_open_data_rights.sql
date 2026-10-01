@@ -46,22 +46,41 @@ $$;
 SAVEPOINT pilot_limit_test;
 DO $$
 DECLARE
-  source_id uuid;
+  v_source_id uuid;
   run_id uuid;
   rejected boolean := false;
+  inserted_count integer;
+  matching_count integer;
 BEGIN
-  SELECT id INTO source_id FROM app_private.source_catalog
+  SELECT id INTO v_source_id FROM app_private.source_catalog
   WHERE name = '深圳市政府数据开放平台-宝安区-医院基本信息';
-  UPDATE app_private.source_catalog SET pilot_group_record_limit = 1 WHERE id = source_id;
+  UPDATE app_private.source_catalog SET pilot_group_record_limit = 1 WHERE id = v_source_id;
   INSERT INTO app_private.import_runs (source_id, region_code, status)
-  VALUES (source_id, '440306', 'running') RETURNING id INTO run_id;
+  VALUES (v_source_id, '440306', 'running') RETURNING id INTO run_id;
   INSERT INTO app_private.source_records (
     source_id, source_key, raw_payload, source_url, content_hash, import_run_id
   ) VALUES (
-    source_id, 'limit-test-1', '{"name":"合成测试医院"}'::jsonb,
+    v_source_id, 'limit-test-1', '{"name":"合成测试医院"}'::jsonb,
     'https://opendata.sz.gov.cn/data/dataSet/toDataDetails/29200_02800636',
     repeat('b', 64), run_id
   );
+
+  INSERT INTO app_private.source_records (
+    source_id, source_key, raw_payload, source_url, content_hash, import_run_id
+  ) VALUES (
+    v_source_id, 'limit-test-1', '{"name":"合成测试医院"}'::jsonb,
+    'https://opendata.sz.gov.cn/data/dataSet/toDataDetails/29200_02800636',
+    repeat('b', 64), run_id
+  ) ON CONFLICT (source_id, source_key, content_hash) DO NOTHING;
+  GET DIAGNOSTICS inserted_count = ROW_COUNT;
+  SELECT count(*) INTO matching_count FROM app_private.source_records AS records
+  WHERE records.source_id = v_source_id
+    AND records.source_key = 'limit-test-1'
+    AND records.content_hash = repeat('b', 64);
+  IF inserted_count <> 0 OR matching_count <> 1 THEN
+    RAISE EXCEPTION 'idempotent replay at the pilot limit must be unchanged with one snapshot';
+  END IF;
+
   BEGIN
     INSERT INTO app_private.source_records (
       source_id, source_key, raw_payload, source_url, content_hash, import_run_id
@@ -73,7 +92,7 @@ BEGIN
     rejected := true;
   END;
   IF NOT rejected THEN
-    RAISE EXCEPTION 'pilot aggregate record limit was not enforced';
+    RAISE EXCEPTION 'new snapshot beyond the pilot aggregate record limit was not rejected';
   END IF;
 END;
 $$;
