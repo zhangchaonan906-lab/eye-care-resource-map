@@ -51,3 +51,19 @@ class OphthalmologyEvidence:
 class EvidenceExtraction:
     status: str
     evidence: tuple[OphthalmologyEvidence, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class FacilityTarget:
+    facility_id: str
+    name: str
+    campus_name: str | None
+    administrative_code: str
+    registration_id: str | None
+
+
+@dataclass(frozen=True, slots=True)
+class MatchResult:
+    status: str
+    facility_id: str | None
+    reason: str

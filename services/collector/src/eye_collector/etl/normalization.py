@@ -40,6 +40,11 @@ def _normalize_text(value: str | None) -> str | None:
     return collapsed.casefold() or None
 
 
+def normalize_text(value: str | None) -> str | None:
+    """Normalize a comparison string using the pipeline's text-only rules."""
+    return _normalize_text(value)
+
+
 def _normalize_phone(value: str | None) -> str | None:
     if value is None:
         return None
