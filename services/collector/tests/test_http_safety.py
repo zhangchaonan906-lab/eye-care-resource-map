@@ -111,7 +111,7 @@ def test_request_logs_include_run_context_but_hide_headers_and_query_values(
             headers={"Authorization": "Bearer header-secret"},
         )
 
-    record = caplog.records[0]
+    record = next(record for record in caplog.records if record.name == "eye_collector.http")
     assert record.run_id == "run-123"
     assert record.source_id == "source-123"
     assert record.source_name == "Fixture Directory"

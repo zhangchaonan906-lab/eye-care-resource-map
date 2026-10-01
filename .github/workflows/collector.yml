@@ -1,0 +1,46 @@
+name: Collector CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  collector:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install collector and development tools
+        run: python -m pip install -e "services/collector[dev]"
+
+      - name: Run unit tests
+        working-directory: services/collector
+        run: python -m pytest tests -m "not database" -q
+
+      - name: Lint
+        working-directory: services/collector
+        run: python -m ruff check src tests
+
+      - name: Type check
+        working-directory: services/collector
+        run: python -m mypy src/eye_collector
+
+      - name: Check whitespace errors
+        run: git diff --check origin/main...HEAD
+
+      - name: Run PostGIS and collector database tests
+        run: bash scripts/test-db.sh

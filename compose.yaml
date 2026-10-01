@@ -12,6 +12,7 @@ services:
     volumes:
       - eye_pgdata:/var/lib/postgresql/data
       - ./db:/workspace/db:ro
+      - ./scripts:/workspace/scripts:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U eye -d eye"]
       interval: 2s

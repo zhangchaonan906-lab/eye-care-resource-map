@@ -4,7 +4,8 @@ import logging
 import random
 import threading
 import time
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Iterator, Mapping
+from contextlib import contextmanager
 from dataclasses import dataclass
 from urllib.parse import urlsplit
 
@@ -33,7 +34,27 @@ class _SourceRateLimiter:
         self._clock = clock
         self._sleeper = sleeper
         self._next_allowed: dict[str, float] = {}
+        self._semaphores: dict[str, tuple[int, threading.BoundedSemaphore]] = {}
         self._lock = threading.Lock()
+
+    @contextmanager
+    def slot(self, source_key: str, max_concurrency: int) -> Iterator[None]:
+        if not 1 <= max_concurrency <= 8:
+            raise ValueError("max_concurrency must be between 1 and 8")
+        with self._lock:
+            configured = self._semaphores.get(source_key)
+            if configured is None:
+                semaphore = threading.BoundedSemaphore(max_concurrency)
+                self._semaphores[source_key] = (max_concurrency, semaphore)
+            elif configured[0] != max_concurrency:
+                raise ValueError("source max_concurrency cannot change while the client is active")
+            else:
+                semaphore = configured[1]
+        semaphore.acquire()
+        try:
+            yield
+        finally:
+            semaphore.release()
 
     def acquire(self, source_key: str, requests_per_second: float, min_delay_ms: int) -> None:
         if requests_per_second <= 0 or min_delay_ms < 0:
@@ -84,6 +105,9 @@ class HttpClient:
         self._rate_limiter = _SourceRateLimiter(clock, sleeper)
         self._logger = logging.getLogger("eye_collector.http")
         self._log_context: dict[str, object] = {}
+        # HTTPX's INFO message includes the raw URL, which can carry tokens in its query.
+        logging.getLogger("httpx").setLevel(logging.WARNING)
+        logging.getLogger("httpcore").setLevel(logging.WARNING)
         self._client = httpx.Client(
             headers={"User-Agent": user_agent, "Accept": "application/json"},
             timeout=httpx.Timeout(timeout_seconds),
@@ -123,6 +147,7 @@ class HttpClient:
         source_key: str,
         requests_per_second: float = 1.0,
         min_delay_ms: int = 0,
+        max_concurrency: int = 1,
         headers: Mapping[str, str] | None = None,
     ) -> HttpResult:
         parsed = urlsplit(url)
@@ -132,41 +157,46 @@ class HttpClient:
             raise HttpRequestError("source URL must not contain credentials")
 
         for attempt in range(1, self._max_attempts + 1):
-            self._rate_limiter.acquire(source_key, requests_per_second, min_delay_ms)
+            retry_status = False
+            retry_after: float | None = None
             try:
-                with self._client.stream("GET", url, headers=headers) as response:
-                    status_code = response.status_code
-                    self._log_attempt(source_key, attempt, status_code, url)
-                    if status_code in _RETRYABLE_STATUS:
-                        if attempt == self._max_attempts:
-                            raise HttpRequestError(
-                                f"HTTP {status_code} after {self._max_attempts} attempts"
+                with self._rate_limiter.slot(source_key, max_concurrency):
+                    self._rate_limiter.acquire(source_key, requests_per_second, min_delay_ms)
+                    with self._client.stream("GET", url, headers=headers) as response:
+                        status_code = response.status_code
+                        self._log_attempt(source_key, attempt, status_code, url)
+                        if status_code in _RETRYABLE_STATUS:
+                            if attempt == self._max_attempts:
+                                raise HttpRequestError(
+                                    f"HTTP {status_code} after {self._max_attempts} attempts"
+                                )
+                            retry_after = self._retry_after(response.headers)
+                            retry_status = True
+                        elif status_code < 200 or status_code >= 300:
+                            raise HttpRequestError(f"HTTP {status_code}")
+                        else:
+                            length = response.headers.get("content-length")
+                            if (
+                                length is not None
+                                and length.isdigit()
+                                and int(length) > self._max_response_bytes
+                            ):
+                                raise ResponseTooLargeError(
+                                    "response exceeds configured byte limit"
+                                )
+
+                            body = bytearray()
+                            for chunk in response.iter_bytes():
+                                body.extend(chunk)
+                                if len(body) > self._max_response_bytes:
+                                    raise ResponseTooLargeError(
+                                        "response exceeds configured byte limit"
+                                    )
+                            return HttpResult(
+                                status_code=status_code,
+                                headers=dict(response.headers),
+                                content=bytes(body),
                             )
-                        retry_after = self._retry_after(response.headers)
-                        response.close()
-                        self._sleep_before_retry(attempt, retry_after)
-                        continue
-                    if status_code < 200 or status_code >= 300:
-                        raise HttpRequestError(f"HTTP {status_code}")
-
-                    length = response.headers.get("content-length")
-                    if (
-                        length is not None
-                        and length.isdigit()
-                        and int(length) > self._max_response_bytes
-                    ):
-                        raise ResponseTooLargeError("response exceeds configured byte limit")
-
-                    body = bytearray()
-                    for chunk in response.iter_bytes():
-                        body.extend(chunk)
-                        if len(body) > self._max_response_bytes:
-                            raise ResponseTooLargeError("response exceeds configured byte limit")
-                    return HttpResult(
-                        status_code=status_code,
-                        headers=dict(response.headers),
-                        content=bytes(body),
-                    )
             except ResponseTooLargeError:
                 raise
             except HttpRequestError:
@@ -190,6 +220,10 @@ class HttpClient:
                         f"({type(error).__name__})"
                     ) from error
                 self._sleep_before_retry(attempt, None)
+
+            if retry_status:
+                self._sleep_before_retry(attempt, retry_after)
+
 
         raise HttpRequestError("request exhausted retry budget")
 

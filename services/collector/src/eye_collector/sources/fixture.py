@@ -108,6 +108,7 @@ class FixtureSourceAdapter(SourceAdapter):
             source_key=self.descriptor.source_key,
             requests_per_second=self.descriptor.requests_per_second,
             min_delay_ms=self.descriptor.min_delay_ms,
+            max_concurrency=self.descriptor.max_concurrency,
         )
         try:
             data = json.loads(result.content)

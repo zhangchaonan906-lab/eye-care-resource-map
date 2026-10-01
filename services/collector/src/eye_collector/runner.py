@@ -67,19 +67,7 @@ class CollectorRunner:
             raise ValueError("limit must be a positive integer")
 
         descriptor = self._adapter.descriptor
-        run_id, registration = self._repository.start_approved_run(
-            descriptor, region_code, self._policy
-        )
         counts = ImportCounts()
-        self._log(
-            logging.INFO,
-            "run_started",
-            run_id=run_id,
-            source_id=registration.id,
-            source_name=registration.name,
-            region_code=region_code,
-            source_key=descriptor.source_key,
-        )
         requested_records = 0
         seen_in_run: set[tuple[str, str]] = set()
 
@@ -87,7 +75,19 @@ class CollectorRunner:
             nonlocal counts
             counts = replace(counts, requested=counts.requested + 1)
 
+        run_id, registration = self._repository.start_approved_run(
+            descriptor, region_code, self._policy
+        )
         try:
+            self._log(
+                logging.INFO,
+                "run_started",
+                run_id=run_id,
+                source_id=registration.id,
+                source_name=registration.name,
+                region_code=region_code,
+                source_key=descriptor.source_key,
+            )
             self._adapter.set_request_context(
                 run_id=run_id,
                 source=registration,

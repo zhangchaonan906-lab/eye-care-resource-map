@@ -11,7 +11,8 @@ _HEADER_SECRET = re.compile(
     r"(?:(?:bearer|basic)\s+)?[^\s,;]+"
 )
 _NAMED_SECRET = re.compile(
-    r"(?i)\b(token|secret|password|api[_-]?key)([\"']?\s*[:=]\s*[\"']?)[^&\s,;\"']+"
+    r"(?i)\b(authorization|cookie|set-cookie|token|secret|password|api[_-]?key)"
+    r"([\"']?\s*[:=]\s*[\"']?)[^&\s,;\"']+"
 )
 _QUERY_VALUE = re.compile(r"([?&][^=&\s]+)=([^&\s]+)")
 
@@ -51,8 +52,7 @@ class JsonLogFormatter(logging.Formatter):
         }
         for field in self._fields:
             value = getattr(record, field, None)
-            if value is not None:
-                payload[field] = _redact(value) if isinstance(value, str) else value
+            payload[field] = _redact(value) if isinstance(value, str) else value
         return json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
 
 
