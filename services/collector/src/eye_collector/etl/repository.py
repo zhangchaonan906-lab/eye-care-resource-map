@@ -229,7 +229,8 @@ class ETLRepository:
                 """
                 INSERT INTO app_private.duplicate_cases (reason, match_fingerprint)
                 VALUES (%s, %s)
-                ON CONFLICT (match_fingerprint) DO NOTHING
+                ON CONFLICT (match_fingerprint)
+                  WHERE match_fingerprint IS NOT NULL DO NOTHING
                 RETURNING id::text
                 """,
                 (reason, fingerprint),

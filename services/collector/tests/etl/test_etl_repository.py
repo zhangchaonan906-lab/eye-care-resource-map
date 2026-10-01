@@ -129,7 +129,8 @@ def test_duplicate_case_and_members_are_inserted_idempotently() -> None:
     assert case_id == "case-1"
     assert connection.transactions == 1
     assert len(connection.statements) == 4
-    assert "ON CONFLICT (match_fingerprint) DO NOTHING" in connection.statements[0][0]
+    assert "ON CONFLICT (match_fingerprint)" in connection.statements[0][0]
+    assert "WHERE match_fingerprint IS NOT NULL DO NOTHING" in connection.statements[0][0]
     assert (
         "ON CONFLICT (duplicate_case_id, candidate_record_id) DO NOTHING"
         in connection.statements[1][0]

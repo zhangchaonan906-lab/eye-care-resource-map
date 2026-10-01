@@ -15,6 +15,7 @@ from eye_collector.etl.models import (
 )
 from eye_collector.etl.normalization import normalize_record
 from eye_collector.etl.parser import parse_snapshot
+from eye_collector.logging_utils import safe_error_summary
 
 
 class PipelineRepository(Protocol):
@@ -70,9 +71,12 @@ class Pipeline:
             "errors": 0,
         }
 
+        duplicate_case_ids: set[str] = set()
         for snapshot in snapshots:
             try:
-                self._process_snapshot(snapshot, counts)
+                duplicate_case_id = self._process_snapshot(snapshot, counts)
+                if duplicate_case_id is not None:
+                    duplicate_case_ids.add(duplicate_case_id)
             except Exception as error:
                 counts["errors"] += 1
                 self._logger.warning(
@@ -81,13 +85,17 @@ class Pipeline:
                         "event": "etl_record_failed",
                         "source_record_id": snapshot.source_record_id,
                         "error_type": type(error).__name__,
+                        "error": safe_error_summary(error),
                     },
                 )
 
+        counts["duplicate_cases"] = len(duplicate_case_ids)
         self._logger.info("etl_completed", extra={"event": "etl_completed", **counts})
         return PipelineStats(**counts)
 
-    def _process_snapshot(self, snapshot: SourceSnapshot, counts: dict[str, int]) -> None:
+    def _process_snapshot(
+        self, snapshot: SourceSnapshot, counts: dict[str, int]
+    ) -> str | None:
         parsed = parse_snapshot(
             snapshot.source_record_id,
             snapshot.raw_payload,
@@ -95,19 +103,19 @@ class Pipeline:
         )
         if parsed.record is None:
             counts["skipped"] += 1
-            return
+            return None
 
         normalized = normalize_record(parsed.record)
         extraction = extract_ophthalmology_evidence(parsed.record)
         candidate_id: str | None = None
-        duplicate = False
+        duplicate_case_id: str | None = None
         with self._repository.atomic():
             candidate_id = self._repository.insert_candidate(
                 normalized, extraction.evidence
             )
             if candidate_id is None:
                 counts["already_processed"] += 1
-                return
+                return None
 
             match = match_facility(normalized, self._repository.facility_targets())
             key = duplicate_key(normalized)
@@ -116,22 +124,21 @@ class Pipeline:
                     key, exclude_candidate_id=candidate_id
                 )
                 if existing_ids:
-                    self._repository.persist_duplicate_case(
+                    duplicate_case_id = self._repository.persist_duplicate_case(
                         key, [candidate_id, *existing_ids]
                     )
-                    duplicate = True
 
-            if not duplicate:
+            if duplicate_case_id is None:
                 self._repository.update_match(
                     candidate_id, match.status, match.facility_id
                 )
 
         counts["candidates_created"] += 1
         counts["evidence_created"] += len(extraction.evidence)
-        if duplicate:
-            counts["duplicate_cases"] += 1
+        if duplicate_case_id is not None:
             counts["needs_review"] += 1
         elif match.status == "matched":
             counts["matched"] += 1
         elif match.status == "needs_review":
             counts["needs_review"] += 1
+        return duplicate_case_id
