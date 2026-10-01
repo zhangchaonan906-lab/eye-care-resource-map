@@ -116,7 +116,7 @@ def test_terminal_missing_name_skip_is_versioned_and_idempotent() -> None:
     query, params = connection.statements[0]
     assert "etl_source_dispositions" in query
     assert "ON CONFLICT (source_record_id, pipeline_version) DO NOTHING" in query
-    assert params == ("source-record-1", "p3.2", "terminal_skip", "missing_name")
+    assert params == ("source-record-1", "p3.3", "terminal_skip", "missing_name")
 
 
 def test_facility_target_query_filters_to_reliable_registration_or_exact_name_region() -> None:

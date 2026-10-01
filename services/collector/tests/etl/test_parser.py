@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from copy import deepcopy
 
+import pytest
+
 from eye_collector.etl.parser import parse_snapshot
 
 
@@ -48,3 +50,14 @@ def test_parser_skips_records_without_a_nonblank_name() -> None:
 
     assert result.record is None
     assert result.skip_reason == "missing_name"
+
+
+@pytest.mark.parametrize("placeholder", ["-", "—"])
+def test_parser_skips_explicit_placeholder_hospital_names(placeholder: str) -> None:
+    result = parse_snapshot(
+        "placeholder-source-record",
+        {"name": placeholder, "address": "深圳市宝安区某路"},
+    )
+
+    assert result.record is None
+    assert result.skip_reason == "invalid_name_placeholder"

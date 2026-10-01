@@ -16,8 +16,8 @@ from eye_collector.etl.models import (
     SourceSnapshot,
 )
 
-_PIPELINE_VERSION = "p3.2"
-_EVIDENCE_RULE_VERSION = "ophthalmology-explicit-fields-v1"
+_PIPELINE_VERSION = "p3.3"
+_EVIDENCE_RULE_VERSION = "ophthalmology-explicit-fields-v2"
 
 
 class ETLRepository:
@@ -117,7 +117,7 @@ class ETLRepository:
         ]
 
     def record_terminal_skip(self, source_record_id: str, reason_code: str) -> None:
-        if reason_code != "missing_name":
+        if reason_code not in {"missing_name", "invalid_name_placeholder"}:
             raise ValueError("unsupported terminal skip reason")
         self._connection.execute(
             """
@@ -158,6 +158,18 @@ class ETLRepository:
                 ORDER BY id
                 """,
                 (key[1], key[2], key[3], exclude_candidate_id),
+            ).fetchall()
+        elif key[0] == "name_only" and len(key) == 3:
+            rows = self._connection.execute(
+                """
+                SELECT id::text FROM app_private.candidate_records
+                WHERE normalized_name = %s
+                  AND campus_name IS NOT DISTINCT FROM NULLIF(%s, '')
+                  AND match_status <> 'rejected'
+                  AND id <> %s
+                ORDER BY id
+                """,
+                (key[1], key[2], exclude_candidate_id),
             ).fetchall()
         else:
             raise ValueError("invalid deterministic duplicate key")

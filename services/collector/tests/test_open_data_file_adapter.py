@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import csv
+import io
+import zipfile
 from pathlib import Path
 
 import pytest
@@ -69,10 +71,10 @@ def test_adapter_rejects_unexpected_header_and_duplicate_header(tmp_path: Path) 
 
 def test_adapter_rejects_inconsistent_csv_row_width(tmp_path: Path) -> None:
     source_file = tmp_path / "designated.csv"
-    source_file.write_text(
-        "医院地址,医院等级,医院类别,所属区,定点医疗机构编码,医院名称\n"
-        "地址,三级甲等,综合,东城区,01020304\n",
-        encoding="utf-8-sig",
+    write_csv(
+        source_file,
+        BEIJING_DESIGNATED_MEDICAL_INSTITUTIONS.expected_headers,
+        [("1", "测试医院", "11000001", "110101", "01", "03", "地址", "x1", "created")],
     )
     adapter = OpenDataFileAdapter(source_file, BEIJING_DESIGNATED_MEDICAL_INSTITUTIONS)
 
@@ -108,14 +110,19 @@ def test_xlsx_adapter_uses_exact_header_names_regardless_of_column_order(
     source_file = tmp_path / "designated.xlsx"
     workbook = Workbook()
     sheet = workbook.active
+    sheet.title = "北京市医疗保障局-定点医疗机构信息"
     sheet.append(list(reversed(BEIJING_DESIGNATED_MEDICAL_INSTITUTIONS.expected_headers)))
     row = {
+        "序号": 1,
         "医院名称": "北京市测试医院",
-        "医院地址": "北京市测试区测试路1号",
-        "医院等级": "三级甲等",
-        "医院类别": "综合",
-        "所属区": "测试区",
         "定点医疗机构编码": "01020304",
+        "所属区": "110101",
+        "医院类别": "01",
+        "医院等级": "03",
+        "医院地址": "北京市测试区测试路1号",
+        "数据唯一记录号": "ignored-id",
+        "数据创建时间": "2026-01-01",
+        "数据更新时间": "2026-02-01",
     }
     sheet.append(
         [
@@ -131,22 +138,37 @@ def test_xlsx_adapter_uses_exact_header_names_regardless_of_column_order(
     assert record.source_key == "01020304"
     assert record.raw_payload["name"] == "北京市测试医院"
     assert record.raw_payload["address"] == "北京市测试区测试路1号"
+    assert record.raw_payload["administrative_code"] == "110101"
     assert record.raw_payload["registration_id"] == "01020304"
-    assert record.raw_payload["source_fields"]["医院等级"] == "三级甲等"
+    assert record.raw_payload["source_fields"]["医院等级"] == "03"
+    assert set(record.raw_payload["source_fields"]) == {
+        "医院名称",
+        "医院地址",
+        "所属区",
+        "医院等级",
+        "医院类别",
+        "定点医疗机构编码",
+    }
+    assert "序号" not in record.raw_payload["source_fields"]
+    assert "数据唯一记录号" not in record.raw_payload["source_fields"]
 
 
 def test_xls_adapter_reads_text_identifiers_without_numeric_coercion(tmp_path: Path) -> None:
     source_file = tmp_path / "designated.xls"
     workbook = xlwt.Workbook()
-    sheet = workbook.add_sheet("data")
+    sheet = workbook.add_sheet("北京市医疗保障局-定点医疗机构信息")
     headers = BEIJING_DESIGNATED_MEDICAL_INSTITUTIONS.expected_headers
     row = {
+        "序号": 1,
         "医院名称": "北京市测试医院",
         "医院地址": "北京市测试区测试路1号",
-        "医院等级": "三级甲等",
-        "医院类别": "综合",
-        "所属区": "测试区",
+        "医院等级": "03",
+        "医院类别": "01",
+        "所属区": "110101",
         "定点医疗机构编码": "01020304",
+        "数据唯一记录号": "ignored-id",
+        "数据创建时间": "2026-01-01",
+        "数据更新时间": "2026-02-01",
     }
     for column, header in enumerate(headers):
         sheet.write(0, column, header)
@@ -158,6 +180,7 @@ def test_xls_adapter_reads_text_identifiers_without_numeric_coercion(tmp_path: P
 
     assert record.source_key == "01020304"
     assert record.raw_payload["registration_id"] == "01020304"
+    assert record.raw_payload["administrative_code"] == "110101"
 
 
 def test_shenzhen_strengths_field_can_supply_explicit_eye_evidence_without_contact_data(
@@ -167,13 +190,14 @@ def test_shenzhen_strengths_field_can_supply_explicit_eye_evidence_without_conta
     row = {header: "" for header in SHENZHEN_BAOAN_HOSPITALS.expected_headers}
     row.update(
         {
-            "ID": "row-1",
-            "NAME": "宝安测试医院",
-            "LOCAL": "宝安区",
-            "ADDRESS": "深圳市宝安区测试路1号",
-            "ADVANTAGE": "设有眼科专科门诊",
-            "PHONE": "075500000000",
-            "EMAIL": "private@example.test",
+            "文档ID": "row-1",
+            "名称": "宝安测试医院",
+            "所在区县": "宝安区",
+            "详细地址": "深圳市宝安区测试路1号",
+            "医疗优势与特长": "眼底照相设备",
+            "医院简介": "设有眼科门诊",
+            "联系电话": "075500000000",
+            "电子邮箱": "private@example.test",
         }
     )
     write_csv(
@@ -188,9 +212,10 @@ def test_shenzhen_strengths_field_can_supply_explicit_eye_evidence_without_conta
     assert parsed.record is not None
     extraction = extract_ophthalmology_evidence(parsed.record)
     assert extraction.status == "evidence_found"
-    assert extraction.evidence[0].field_name == "specialties"
-    assert extraction.evidence[0].evidence_text == "设有眼科专科门诊"
+    assert extraction.evidence[0].field_name == "hospital_description"
+    assert extraction.evidence[0].evidence_text == "设有眼科门诊"
     assert "specialties" in source_record.raw_payload
+    assert "hospital_description" in source_record.raw_payload
     assert "phone" not in source_record.raw_payload
     assert "email" not in source_record.raw_payload
 
@@ -203,3 +228,79 @@ def test_adapter_rejects_file_changed_after_fingerprint_was_captured(tmp_path: P
 
     with pytest.raises(ValueError, match="changed after fingerprint"):
         list(adapter.iter_records("110000", limit=1))
+
+
+def test_shenzhen_adapter_reads_configured_sheet_from_official_zip(tmp_path: Path) -> None:
+    source_file = tmp_path / "baoan.zip"
+    workbook_bytes = io.BytesIO()
+    workbook = Workbook()
+    workbook.active.title = "资源描述信息"
+    workbook.active.append(("不是数据表",))
+    sheet = workbook.create_sheet("数据集1")
+    sheet.append(list(SHENZHEN_BAOAN_HOSPITALS.expected_headers))
+    values = {header: "" for header in SHENZHEN_BAOAN_HOSPITALS.expected_headers}
+    values.update(
+        {
+            "文档ID": "doc-001",
+            "名称": "深圳市宝安区中心医院",
+            "所在区县": "宝安区",
+            "详细地址": "深圳市宝安区测试路",
+            "医院简介": "医院设有眼科门诊。",
+            "联系电话": "13800000000",
+        }
+    )
+    sheet.append([values[header] for header in SHENZHEN_BAOAN_HOSPITALS.expected_headers])
+    workbook.save(workbook_bytes)
+    with zipfile.ZipFile(source_file, "w", zipfile.ZIP_DEFLATED) as archive:
+        archive.writestr("宝安区-医院基本信息_2920002800636.xlsx", workbook_bytes.getvalue())
+
+    adapter = OpenDataFileAdapter(source_file, SHENZHEN_BAOAN_HOSPITALS)
+    record = next(adapter.iter_records("440306", limit=1))
+
+    assert adapter.original_filename == "baoan.zip"
+    assert adapter.file_sha256 is not None
+    assert adapter.archive_member_name == "宝安区-医院基本信息_2920002800636.xlsx"
+    assert record.source_key == "doc-001"
+    assert record.raw_payload["hospital_description"] == "医院设有眼科门诊。"
+    assert record.raw_payload["source_fields"]["名称"] == "深圳市宝安区中心医院"
+    assert "联系电话" not in record.raw_payload["source_fields"]
+
+
+def test_beijing_adapter_rejects_malformed_nonempty_district_code(tmp_path: Path) -> None:
+    source_file = tmp_path / "district.csv"
+    write_csv(
+        source_file,
+        BEIJING_DESIGNATED_MEDICAL_INSTITUTIONS.expected_headers,
+        [("1", "测试医院", "reg-1", "东城区", "01", "03", "测试路", "x1", "created", "updated")],
+    )
+
+    adapter = OpenDataFileAdapter(source_file, BEIJING_DESIGNATED_MEDICAL_INSTITUTIONS)
+
+    with pytest.raises(ValueError, match="six-digit administrative code"):
+        list(adapter.iter_records("110000", limit=1))
+
+
+def test_same_shenzhen_document_id_with_changed_content_remains_two_snapshots(
+    tmp_path: Path,
+) -> None:
+    source_file = tmp_path / "baoan.csv"
+    headers = SHENZHEN_BAOAN_HOSPITALS.expected_headers
+    first = {header: "" for header in headers}
+    first.update({"文档ID": "doc-1", "名称": "同名医院", "医院简介": "普通综合医院"})
+    second = dict(first, **{"医院简介": "医院设有眼科门诊"})
+    write_csv(
+        source_file,
+        headers,
+        [
+            tuple(first[header] for header in headers),
+            tuple(second[header] for header in headers),
+        ],
+    )
+
+    records = list(OpenDataFileAdapter(source_file, SHENZHEN_BAOAN_HOSPITALS).iter_records(
+        "440306", limit=2
+    ))
+
+    assert [record.source_key for record in records] == ["doc-1", "doc-1"]
+    assert records[0].raw_payload != records[1].raw_payload
+    assert records[0].raw_payload["name"] == records[1].raw_payload["name"]

@@ -49,6 +49,10 @@ compose exec -T db psql -h 127.0.0.1 -U eye -d eye -v ON_ERROR_STOP=1 \
   -f /workspace/db/migrations/008_source_file_provenance.sql
 compose exec -T db psql -h 127.0.0.1 -U eye -d eye -v ON_ERROR_STOP=1 \
   -f /workspace/scripts/seed-opendata-sources.sql
+compose exec -T db psql -h 127.0.0.1 -U eye -d eye -v ON_ERROR_STOP=1 \
+  -f /workspace/db/tests/009_real_export_compatibility_before.sql
+compose exec -T db psql -h 127.0.0.1 -U eye -d eye -v ON_ERROR_STOP=1 \
+  -f /workspace/db/migrations/009_real_export_compatibility.sql
 
 for sql_file in \
   /workspace/db/tests/001_core.sql \
@@ -57,7 +61,8 @@ for sql_file in \
   /workspace/db/tests/004_collector_permissions.sql \
   /workspace/db/tests/005_etl_candidates.sql \
   /workspace/db/tests/006_geocoding.sql \
-  /workspace/db/tests/007_source_open_data_rights.sql; do
+  /workspace/db/tests/007_source_open_data_rights.sql \
+  /workspace/db/tests/009_real_export_compatibility.sql; do
   compose exec -T db psql -h 127.0.0.1 -U eye -d eye -v ON_ERROR_STOP=1 -f "$sql_file"
 done
 compose exec -T db psql -h 127.0.0.1 -U eye -d eye -v ON_ERROR_STOP=1 \

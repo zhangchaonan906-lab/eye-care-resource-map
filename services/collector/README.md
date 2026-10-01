@@ -117,10 +117,10 @@ py -m eye_collector.cli inspect-file `
 
 py -m eye_collector.cli inspect-file `
   --source shenzhen-open-data-baoan-hospital-basic-information `
-  --file C:\secure\shenzhen-baoan-hospital-basic-information.xlsx
+  --file C:\secure\shenzhen-baoan-hospital-basic-information.zip
 ```
 
-JSON 结果包含文件名、SHA-256、文件大小、格式、表头、完整数据行数、准入来源/预期 schema、schema 匹配结果、试点上限与剩余容量、单次运行上限、允许地区和 `ready_to_import`。支持 CSV/XLS/XLSX，最大 10 MiB；实际导入前还会再次核对文件指纹。行数上限为每次 150 条，试点来源组的累计上限由数据库实施。检查返回非零或 `ready_to_import=false` 时不得导入。
+JSON 结果包含文件名、SHA-256、文件大小、格式、表头、完整数据行数、准入来源/预期 schema、schema 匹配结果、试点上限与剩余容量、单次运行上限、允许地区和 `ready_to_import`。支持 CSV/XLS/XLSX，最大 10 MiB。仅显式允许 ZIP 的来源可读取 ZIP；深圳适配器只接受单个安全路径下的 XLSX member，直接从内存读取，不解压到磁盘，并报告 member 名称、SHA-256 和大小。实际导入前还会再次核对原始文件指纹。行数上限为每次 150 条，试点来源组的累计上限由数据库实施。检查返回非零或 `ready_to_import=false` 时不得导入。
 
 每次文件导入的 `import_runs.id` 即 `import_run_id`。该记录通过 `source_id` 关联 `source_catalog`，并保存原始文件名（仅 basename）、原始字节 SHA-256、文件字节数、取得时间、数据集页面、目录记录的数据更新时间、操作员和固定采集方式 `official_portal_manual_download`。操作员与取得时间必须由实际下载人员提供，不能猜测；可用 `--operator` / `--obtained-at`，或设置 `PILOT_OPERATOR` / `PILOT_FILE_OBTAINED_AT`（ISO-8601 且带时区）。同一个文件可以重复运行；每次运行均保留 provenance，而 source snapshot 仍按 `(source_id, source_key, content_hash)` 幂等去重。
 
@@ -149,7 +149,7 @@ py -m eye_collector.cli pilot `
 
 QA 清单：医院名称、地址、区、来源分类、注册/参考 ID、来源 URL、原始字段映射、重复状态和眼科证据状态。北京至少人工抽样 50 条；深圳少于 50 条时检查全部实际记录。检查结果需标明数据文件 SHA-256 与 import run，便于回溯。
 
-可选来源为 `beijing-open-data-hospitals`、`beijing-open-data-designated-medical-institutions` 和 `shenzhen-open-data-baoan-hospital-basic-information`。深圳必须使用 `--region 440306`。文件适配器要求官方字段名精确匹配；额外、缺失或重复的表头会拒绝整个导入。CSV/XLS/XLSX 都支持，文件上限 10 MiB、每次导入上限 150 条，且数据库对本试点三项来源累计最多允许 300 条 source records。深圳原始数据不允许放入 GitHub、原始下载镜像、导出接口或转售。
+可选来源为 `beijing-open-data-hospitals`、`beijing-open-data-designated-medical-institutions` 和 `shenzhen-open-data-baoan-hospital-basic-information`。深圳必须使用 `--region 440306`。北京定点医疗机构文件必须匹配官方 10 列表头，但只映射获准的医院名称、地址、六位所属区行政代码、医院等级、类别和定点机构编码。深圳文件必须匹配官方 17 列表头且选择 `数据集1` sheet；只映射获准业务字段。额外列只参与 schema 校验，不会自动进入 canonical payload。额外、缺失或重复的表头会拒绝整个导入。CSV/XLS/XLSX 都支持；深圳还支持经配置批准的单 XLSX ZIP。文件上限 10 MiB、每次导入上限 150 条，且数据库对本试点三项来源累计最多允许 300 条 source records。深圳原始数据不允许放入 GitHub、原始下载镜像、导出接口或转售。
 
 `OpenDataApiAdapter` 提供通用 JSON API 接口，要求显式配置响应 envelope、完整字段映射、稳定记录键、有界分页以及与数据集页面同源的 HTTPS endpoint；网络请求复用统一 HTTP client 的重试、速率限制、响应体上限和安全日志。它不会自行授予 API 权限，仍须通过现有 Source Approval Gate。当前审核的 P5 数据源都是 `manual_only`，所以 API adapter 尚未启用，也没有配置未经核验的接口或凭据。
 

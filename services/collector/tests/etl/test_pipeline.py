@@ -4,6 +4,8 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from typing import Any
 
+import pytest
+
 from eye_collector.etl.models import FacilityTarget, NormalizedRecord, SourceSnapshot
 from eye_collector.etl.pipeline import Pipeline
 
@@ -125,6 +127,25 @@ def test_pipeline_queues_exact_duplicate_candidates_for_review() -> None:
     ]
 
 
+def test_pipeline_sends_same_name_without_region_code_to_review_not_merge() -> None:
+    repository = Repository(
+        [snapshot("source-1", {"name": "宝安测试医院"})],
+        duplicate_ids=["candidate-from-another-snapshot"],
+    )
+
+    result = Pipeline(repository).run()
+
+    assert result.needs_review == 1
+    assert result.duplicate_cases == 1
+    assert repository.duplicate_cases == [
+        (
+            ("name_only", "宝安测试医院", ""),
+            ["candidate-1", "candidate-from-another-snapshot"],
+        )
+    ]
+    assert repository.matches == []
+
+
 def test_pipeline_counts_invalid_and_previously_processed_snapshots() -> None:
     repository = Repository(
         [snapshot("bad-name", {"address": "北京市某路"})],
@@ -137,3 +158,19 @@ def test_pipeline_counts_invalid_and_previously_processed_snapshots() -> None:
     assert result.skipped == 1
     assert result.candidates_created == 0
     assert repository.dispositions == [("bad-name", "missing_name")]
+
+
+@pytest.mark.parametrize("placeholder", ["-", "—"])
+def test_placeholder_names_are_terminally_skipped_without_removing_raw_snapshot(
+    placeholder: str,
+) -> None:
+    raw_payload = {"name": placeholder, "address": "宝安区测试路"}
+    repository = Repository([snapshot("source-row-1", raw_payload)])
+
+    result = Pipeline(repository).run()
+
+    assert result.skipped == 1
+    assert result.candidates_created == 0
+    assert repository.created == []
+    assert repository.dispositions == [("source-row-1", "invalid_name_placeholder")]
+    assert raw_payload == repository.raw_before[0]
