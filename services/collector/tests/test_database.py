@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import csv
 import os
+from pathlib import Path
 
 import psycopg
 import pytest
@@ -12,6 +14,7 @@ from eye_collector.models import SourceDescriptor, SourcePage
 from eye_collector.policy import SourcePolicy
 from eye_collector.runner import CollectorRunner
 from eye_collector.sources.fixture import FixtureSourceAdapter, FixtureTransport
+from eye_collector.sources.open_data_file import BEIJING_HOSPITALS, OpenDataFileAdapter
 
 pytestmark = pytest.mark.database
 
@@ -105,6 +108,35 @@ def test_database_fixture_snapshots_are_idempotent_and_changed_content_is_histor
             """
         ).fetchone()
         assert run_states == (existing_runs[0] + 3, existing_runs[0] + 3)
+
+
+def test_database_approved_manual_file_snapshot_is_idempotent(tmp_path: Path) -> None:
+    source_file = tmp_path / "synthetic-beijing.csv"
+    with source_file.open("w", newline="", encoding="utf-8-sig") as stream:
+        writer = csv.writer(stream)
+        writer.writerow(["机构名称"])
+        writer.writerow(["数据库集成测试医院"])
+    adapter = OpenDataFileAdapter(source_file, BEIJING_HOSPITALS)
+    repository = PostgresRepository.connect(database_url())
+    try:
+        first = CollectorRunner(repository, adapter).run("110000", limit=1)
+        second = CollectorRunner(repository, adapter).run("110000", limit=1)
+    finally:
+        repository.close()
+
+    assert (first.status, first.counts.inserted) == ("succeeded", 1)
+    assert (second.status, second.counts.unchanged) == ("succeeded", 1)
+    with psycopg.connect(database_url(), autocommit=True) as connection:
+        row = connection.execute(
+            """
+            SELECT count(*), min(raw_payload->>'name'), min(source_url)
+            FROM app_private.source_records AS records
+            JOIN app_private.source_catalog AS sources ON sources.id = records.source_id
+            WHERE sources.name = %s AND records.source_key = %s
+            """,
+            (BEIJING_HOSPITALS.source_name, "数据库集成测试医院"),
+        ).fetchone()
+    assert row == (1, "数据库集成测试医院", BEIJING_HOSPITALS.dataset_url)
 
 
 def test_database_failed_run_is_closed_and_error_is_redacted() -> None:
@@ -211,9 +243,7 @@ def test_database_policy_rejects_sources_before_run_insert(
 
 def test_database_policy_rejects_unknown_source_before_run_insert() -> None:
     repository = PostgresRepository.connect(database_url())
-    descriptor = SourceDescriptor(
-        "unknown", "Unknown Directory", "https://fixture.invalid/unknown"
-    )
+    descriptor = SourceDescriptor("unknown", "Unknown Directory", "https://fixture.invalid/unknown")
     try:
         with psycopg.connect(database_url(), autocommit=True) as connection:
             before = connection.execute("SELECT count(*) FROM app_private.import_runs").fetchone()
