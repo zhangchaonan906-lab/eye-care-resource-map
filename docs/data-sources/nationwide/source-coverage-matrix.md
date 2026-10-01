@@ -4,7 +4,7 @@
 
 ## 状态定义
 
-- 来源准入状态仅使用 `APPROVED`、`MANUAL_ONLY`、`UNKNOWN`、`REJECTED`、`STALE`。`APPROVED`/`MANUAL_ONLY` 仅适用于既有 P5 评审结论，不能从“网页可访问”推导。
+- 来源资格状态（`source_status`）仅使用 `APPROVED`、`UNKNOWN`、`REJECTED`、`STALE`。访问方式必须单独记录在 `access_policy`，仅使用 `automated_access_allowed`、`manual_only`、`application_required`、`query_only`、`unknown`。例如 `APPROVED + manual_only` 是合法组合；不能用 `MANUAL_ONLY` 代替来源资格状态。
 - 描述分组仅使用 `STRUCTURED_OFFICIAL`、`OFFICIAL_UNSTRUCTURED`、`OFFICIAL_QUERY_ONLY`、`REGISTERED_DOWNLOAD`、`NO_USABLE_SOURCE`、`REQUIRES_FURTHER_REVIEW`。
 - 覆盖粒度仅为 `province_wide`、`city_only`、`district_only`；直辖市完整市域可记作其省级规划单元，但需明确其来源实际覆盖范围。
 - “官方数据平台显示无条件开放”只描述平台元数据，不自动证明长期存储、应用展示、原始数据转移/再分发的权利。
@@ -14,8 +14,8 @@
 | 地区 | 代码 | 当前发现与官方核查入口 | 覆盖/分组 | 来源状态 | 备注 |
 |---|---:|---|---|---|---|
 | 北京 | 110000 | P5 北京市公共数据开放平台“定点医疗机构信息” | province_wide（P5 受控样本，不代表已全量导入）/ STRUCTURED_OFFICIAL | APPROVED | 仅按既有来源评审结论；已导入 50 条并 QA。不得推称北京全量覆盖。 |
-| 天津 | 120000 | [三级医疗机构基本信息](https://open.data.tj.gov.cn/sjj/1be22c6e54be4f3e85989bc60ae28bd8.htm) | province_wide（直辖市）/ STRUCTURED_OFFICIAL | UNKNOWN | 页面标注 XLS、名称/地址/邮编/区县、年度、无条件开放；可见 2026-08 文件。存储/展示/再分发权、实际记录数及精确字段待审。 |
-| 河北 | 130000 | [京津冀公共数据协同目录](https://data.beijing.gov.cn/jjjxtsjkfzt/index.htm) 列出河北省医保局“定点医疗机构信息表” | unknown / REQUIRES_FURTHER_REVIEW | UNKNOWN | 目录列出省级提供方和下载入口，但未核实原始发布平台、实际覆盖、schema、记录数、更新日及协议；聚合目录不能替代源平台权利审查。 |
+| 天津 | 120000 | [三级医疗机构基本信息](https://open.data.tj.gov.cn/sjj/1be22c6e54be4f3e85989bc60ae28bd8.htm) | province_wide（直辖市内的三级医疗机构子集，文件地域待验证）/ STRUCTURED_OFFICIAL | UNKNOWN | 数据集标注无条件开放；平台声明赋予该类数据自由使用/传播/分享并要求来源署名。长期存储和项目外应用展示仍未确认；`access_policy=manual_only`，登录要求未核实。 |
+| 河北 | 130000 | [京津冀公共数据协同目录](https://data.beijing.gov.cn/jjjxtsjkfzt/index.htm) 列出河北省医保局“定点医疗机构信息表”；目录关联的河北数据开放网当前不可达 | unknown / REQUIRES_FURTHER_REVIEW | UNKNOWN | 未定位具体河北源平台数据集页面；下载入口只证明协同目录可见，不构成权利批准。原始平台、覆盖、schema、记录数、更新及协议均未知；`access_policy=unknown`。 |
 | 山西 | 140000 | [国家医保服务平台](https://fuwu.nhsa.gov.cn/)地方服务入口；省级卫健/医保开放目录待检 | unknown / REQUIRES_FURTHER_REVIEW | UNKNOWN | 目前仅确认查询入口，不确认完整名录下载/API 或再利用许可。 |
 | 内蒙古 | 150000 | [自治区卫健委医卫机构查询](https://wjw.nmg.gov.cn/dataservice/wjw/index.action) | unknown / OFFICIAL_QUERY_ONLY | UNKNOWN | 查询类入口，不视为可批量获取或可复用数据集；导出和条款未核实。 |
 | 辽宁 | 210000 | [国家医保服务平台](https://fuwu.nhsa.gov.cn/)地方服务入口；省级公开目录待检 | unknown / REQUIRES_FURTHER_REVIEW | UNKNOWN | 尚未核实可复现的官方机构名录文件/API。 |
@@ -23,7 +23,7 @@
 | 黑龙江 | 230000 | 省级开放平台及卫健/医保名录待检 | unknown / REQUIRES_FURTHER_REVIEW | UNKNOWN | 未确认可用的官方结构化来源。 |
 | 上海 | 310000 | [上海市公共数据开放平台](https://data.sh.gov.cn/)；2025 操作指南仅发现养老机构设置医疗机构等关联数据 | unknown / REQUIRES_FURTHER_REVIEW | UNKNOWN | 已发现医疗相关数据产品，但尚未验证全市医院目录、完整性及复用协议。 |
 | 江苏 | 320000 | [江苏省医保局](https://ybj.jiangsu.gov.cn/)定点机构查询入口；南京有官方医疗机构目录 | city_only（南京）/ OFFICIAL_QUERY_ONLY | UNKNOWN | 南京市级目录不代表江苏全省；省级导出和权利待核实。 |
-| 浙江 | 330000 | [浙江·数据开放](https://data.zjzwfw.gov.cn/dopServer/index.html)精选“二级及以上医疗机构基本信息” | unknown / REQUIRES_FURTHER_REVIEW | UNKNOWN | 平台有省级资源，但未核实该数据集具体地域范围；条目显示“数据使用申请”；[受限开放协议](https://data.zjzwfw.gov.cn/dopServer/static/agreement/%E6%B5%99%E6%B1%9F%E7%9C%81%E6%95%B0%E6%8D%AE%E5%BC%80%E6%94%BE%E5%B9%B3%E5%8F%B0%E5%8F%97%E9%99%90%E5%BC%80%E6%94%BE%E5%8D%8F%E8%AE%AE.pdf)要求具体申请/约束用途；尚未取得批准。 |
+| 浙江 | 330000 | [浙江·数据开放](https://data.zjzwfw.gov.cn/dopServer/index.html)精选“二级及以上医疗机构基本信息” | unknown / REQUIRES_FURTHER_REVIEW | UNKNOWN | 条目显示“数据使用申请”；框架协议把数据范围、用途、具体 app、有效期和终止后销毁期限留给申请/具体约定；本项目未申请、未获批。`access_policy=application_required`。 |
 | 安徽 | 340000 | [国家医保服务平台](https://fuwu.nhsa.gov.cn/)地方服务入口；省级开放目录待检 | unknown / REQUIRES_FURTHER_REVIEW | UNKNOWN | 未核实医院目录的数据集与许可。 |
 | 福建 | 350000 | 省级政务数据开放平台/卫健委数据公开目录待检 | unknown / REQUIRES_FURTHER_REVIEW | UNKNOWN | 未确认结构化医疗机构目录。 |
 | 江西 | 360000 | 省级数据开放目录、卫健/医保入口待检 | unknown / REQUIRES_FURTHER_REVIEW | UNKNOWN | 未确认完整目录或授权方式。 |
@@ -49,18 +49,18 @@
 
 ## 候选来源资格字段
 
-| region / region_code | platform / provider / dataset | dataset page | coverage_level | records / updated | format / API / registration | access_policy / data_use / reuse / app display / raw transfer / redistribution / attribution / retention / automated / manual | ophthalmology / address / admin code / registration id / coordinates / coordinate system | source_status / group / notes |
+| region / region_code | platform / provider / dataset | dataset page | coverage_level | records / updated | format / API / registration | access_policy | rights: data use / internal processing / storage / reuse / app display / raw transfer / raw redistribution / attribution / commercial / retention / withdrawal | schema: ophthalmology / address / admin code / registration id / coordinates / coordinate system | source_status / group / notes |
 |---|---|---|---|---|---|---|---|---|
-| 天津 / 120000 | 天津市信息资源统一开放平台 / 市卫生健康委 / 三级医疗机构基本信息 | [官方数据集页](https://open.data.tj.gov.cn/sjj/1be22c6e54be4f3e85989bc60ae28bd8.htm) | province_wide（直辖市；范围仍需文件核验） | 页面展示 2026-08-20 文件；数量未核实 | XLS；页面有登录/注册入口，下载是否要求注册未核实 | 页面元数据显示“无条件开放”；存储、再使用、应用展示、原始转移/再分发、归属、保留期、自动访问、手动下载逐项均待协议审核 | 明确名称/地址/邮编/区县；眼科字段/区划码/注册号/坐标/坐标系待检查文件 | UNKNOWN / STRUCTURED_OFFICIAL / 每年；只可人工获取官方文件，禁止自动下载直至批准 |
-| 河北 / 130000 | 京津冀协同目录展示 / 河北省医疗保障局 / 定点医疗机构信息表 | [官方协同目录](https://data.beijing.gov.cn/jjjxtsjkfzt/index.htm)（非源平台） | unknown（目录称省级；待源平台确认） | 未核实 | 页面有下载入口；实际格式、是否需注册未知 | 开放属性和服务条款未知；所有再利用、展示、存储、归因、保留、访问政策未知 | 全部字段待源页面/文件确认；名称地址可能性不能当作已核实 | UNKNOWN / REQUIRES_FURTHER_REVIEW / 必须找到河北源平台并核实条款、字段、下载复现性 |
-| 浙江 / 330000 | 浙江·数据开放 / 省级平台 / 二级及以上医疗机构基本信息 | [官方平台](https://data.zjzwfw.gov.cn/dopServer/index.html)（搜索精选项） | unknown（具体数据地域范围待元数据确认） | 条目日期 2025-01-03；数量未见 | 条目为“数据使用申请”；格式/API/注册状态待核实 | 受限开放协议存在，必须获得数据主体批准；存储、产品展示、原始传递、再分发、归因、保留与后续撤回需在具体协议中逐项确认 | schema 未验证；不能推定有眼科、地址、行政码、注册号或坐标 | UNKNOWN / REQUIRES_FURTHER_REVIEW / 未取得申请批准前禁止导入 |
+| 天津 / 120000 | 天津市信息资源统一开放平台 / 市卫生健康委 / 三级医疗机构基本信息 | [官方数据集页](https://open.data.tj.gov.cn/sjj/1be22c6e54be4f3e85989bc60ae28bd8.htm) | 直辖市地域；范围/完整性需文件验证；仅三级机构子集 | 页面附件 2026-08-20；数量未核实 | XLS；页面显示登录/注册入口，具体文件是否要求注册未知 | manual_only | 使用/自由传播分享=平台声明允许（受法律约束）；内部处理=未单列但可能属于使用；长期存储=未说明；再使用=平台一般条款允许；项目外 app 展示=未明确且平台声明的应用成果有审核；原始转移/再分发=无条件数据的通用声明允许自由传播分享；归因=必须标注“天津市信息资源统一开放平台”；商业=未专门说明；保留期=未说明；下架/撤回后已取得副本处置=未说明 | 已知摘要字段名称、地址、邮编、区县；眼科/行政码/注册号/坐标/坐标系未核实 | UNKNOWN / STRUCTURED_OFFICIAL / 页面每年更新但页面更新时间空；长存储与项目展示未决 |
+| 河北 / 130000 | 京津冀协同目录展示 / 河北省医疗保障局 / 定点医疗机构信息表 | [官方协同目录](https://data.beijing.gov.cn/jjjxtsjkfzt/index.htm)；平台链接指向 [河北省公共数据开放网](http://hebdata.hebyun.gov.cn/home)（访问返回 502） | unknown（名录地域和统计口径未核实） | 未核实 | 协同目录有下载入口；真实源页/格式/API/注册未核实 | unknown | 数据使用/处理/存储/再使用/app 展示/传递/再分发/归因/商业/保留/撤回均未在本次找到的数据集自身条款中核实 | 全部字段待真正源页/文件确认 | UNKNOWN / REQUIRES_FURTHER_REVIEW / 协同目录不视为源权利批准；“医保定点”不等于全体医疗机构 |
+| 浙江 / 330000 | 浙江·数据开放 / 省级平台 / 二级及以上医疗机构基本信息 | [官方平台](https://data.zjzwfw.gov.cn/dopServer/index.html)（数据精选条目） | 数据地域范围待数据集元数据确认；仅二级及以上机构类别 | 条目显示 2025-01-03；数量未见 | 数据使用申请；具体文件/API/注册要求待获批后核实 | application_required | 数据使用/app 服务仅限已批准的申请、数据清单和具体平台/系统/app；内部处理、长期存储依个案约定；通用框架非本项目授权；再使用范围受申请限制；app 显示需具体批准；未经授权不得向第三方提供原始数据；原始再分发=未经单独授权禁止；引用/展示需注明来源；商业用途未通用批准；协议终止后按约定期限销毁（期限空缺需填写）；违规可暂停/终止访问 | schema 未验证；不能推定眼科、地址、行政码、注册号或坐标 | UNKNOWN / REQUIRES_FURTHER_REVIEW / 本项目未申请或获批；禁止下载/导入 |
 | 国家 / N/A | 国家卫健委政务服务平台 / 主管部门 / 分类医疗机构查询 | [医卫机构查询](https://zwfw.nhc.gov.cn/cxx/ywjgcx/cqzdjsyljg/) | 多省但仅特定资质类别 | 页面查询可见结果数；非机构总量 | 在线查询；API/导出及注册要求未核实 | 查询页面不授予抓取、长期存储、转移或再分发权；全部待审 | 页面含机构名、地址、主营科室、地区；仅限定类别，不能做主名录；坐标系无 | UNKNOWN / OFFICIAL_QUERY_ONLY / 仅作为核验线索 |
 
 ## 盘点结论与证据限制
 
 已找到明确官方结构化名录页面的候选数有限；对其余地区，本次记录的是官方核查入口或待查状态，不宣称“没有数据源”。国家卫健委查询、医保定点查询、行政许可公示和公开目录分别有类别/状态/时效边界，不能直接合并成全国完整医院清单。
 
-可直接支持具体事实的官方页面：天津数据集元数据明确 XLS、无条件开放、字段和更新频率；浙江平台明确省级资源与医疗机构条目及使用申请；河北协同目录明确数据提供方和资源名；湖北数据开放页列出行政许可公示；国家卫健委提供分类机构查询。上述信息不等于权利批准。
+可直接支持具体事实的官方页面：天津数据集元数据与[网站声明](https://open.data.tj.gov.cn/xgxx/wzsm/index.htm)明确无条件开放标签、一般性自由使用/传播分享、来源署名和平台应用成果审核；浙江平台列出使用申请条目，其[受限开放协议](https://data.zjzwfw.gov.cn/dopServer/static/agreement/%E6%B5%99%E6%B1%9F%E7%9C%81%E6%95%B0%E6%8D%AE%E5%BC%80%E6%94%BE%E5%B9%B3%E5%8F%B0%E5%8F%97%E9%99%90%E5%BC%80%E6%94%BE%E5%8D%8F%E8%AE%AE.pdf)把具体数据、用途和期限留给申请/约定；河北协同目录列出提供方和资源名，但不是源平台页面。所有新增来源仍未批准。
 
 ## 下一轮核查优先级
 
