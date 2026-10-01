@@ -1,0 +1,29 @@
+{
+  "name": "@eye-care-resource-map/public-api",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "vitest run src/lib/public-api/handlers.test.ts",
+    "test:db": "vitest run --config vitest.db.config.ts",
+    "test:watch": "vitest",
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit",
+    "build": "next build"
+  },
+  "dependencies": {
+    "next": "16.3.8",
+    "pg": "8.16.3",
+    "react": "19.2.3",
+    "react-dom": "19.2.3"
+  },
+  "devDependencies": {
+    "@types/node": "22.19.1",
+    "@types/pg": "8.15.6",
+    "@types/react": "19.2.7",
+    "@types/react-dom": "19.2.3",
+    "eslint": "9.39.1",
+    "eslint-config-next": "16.3.8",
+    "typescript": "5.9.3",
+    "vitest": "^4.1.11"
+  }
+}
