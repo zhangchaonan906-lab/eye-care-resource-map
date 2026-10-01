@@ -9,7 +9,7 @@ import httpx
 
 from eye_collector.exceptions import AdapterError
 from eye_collector.http import HttpClient
-from eye_collector.models import RawRecord, SourceDescriptor, SourcePage
+from eye_collector.models import RawRecord, SourceDescriptor, SourcePage, SourceRegistration
 from eye_collector.sources.base import SourceAdapter
 
 _CATALOG_URL = "https://fixture.invalid/directory"
@@ -78,6 +78,20 @@ class FixtureSourceAdapter(SourceAdapter):
             requests_per_second=1.0,
             min_delay_ms=0,
             max_concurrency=1,
+        )
+
+    def set_request_context(
+        self,
+        *,
+        run_id: str,
+        source: SourceRegistration,
+        region_code: str,
+    ) -> None:
+        self._http.set_log_context(
+            run_id=run_id,
+            source_id=source.id,
+            source_name=source.name,
+            region_code=region_code,
         )
 
     def fetch_page(self, region_code: str, cursor: str | None) -> SourcePage:

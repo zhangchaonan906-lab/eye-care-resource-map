@@ -2,9 +2,10 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from typing import Any
+from urllib.parse import urlsplit
 
 from eye_collector.exceptions import SourcePolicyError
-from eye_collector.models import SourceRegistration
+from eye_collector.models import RawRecord, SourceRegistration
 
 
 class SourcePolicy:
@@ -33,3 +34,25 @@ class SourcePolicy:
         if not isinstance(payload, dict):
             raise SourcePolicyError("raw payload must be a JSON object")
         return payload
+
+    def authorize_record(self, source: SourceRegistration, record: RawRecord) -> RawRecord:
+        self.authorize(source)
+        if self._https_origin(source.url) != self._https_origin(record.source_url):
+            raise SourcePolicyError("record URL must use the approved source origin")
+        self.authorize_payload(source, record.raw_payload)
+        return record
+
+    @staticmethod
+    def _https_origin(url: str) -> tuple[str, str, int]:
+        try:
+            parsed = urlsplit(url)
+            if (
+                parsed.scheme != "https"
+                or parsed.hostname is None
+                or parsed.username is not None
+                or parsed.password is not None
+            ):
+                raise ValueError("invalid HTTPS origin")
+            return parsed.scheme, parsed.hostname.lower(), parsed.port or 443
+        except ValueError as error:
+            raise SourcePolicyError("record URL must use the approved source origin") from error

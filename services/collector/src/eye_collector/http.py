@@ -11,6 +11,7 @@ from urllib.parse import urlsplit
 import httpx
 
 from eye_collector.exceptions import HttpRequestError, ResponseTooLargeError
+from eye_collector.logging_utils import safe_log_origin
 
 _RETRYABLE_STATUS = {429, 500, 502, 503, 504}
 _MAX_RETRY_AFTER_SECONDS = 30.0
@@ -82,6 +83,7 @@ class HttpClient:
         self._random_uniform = random_uniform
         self._rate_limiter = _SourceRateLimiter(clock, sleeper)
         self._logger = logging.getLogger("eye_collector.http")
+        self._log_context: dict[str, object] = {}
         self._client = httpx.Client(
             headers={"User-Agent": user_agent, "Accept": "application/json"},
             timeout=httpx.Timeout(timeout_seconds),
@@ -98,6 +100,21 @@ class HttpClient:
 
     def close(self) -> None:
         self._client.close()
+
+    def set_log_context(
+        self,
+        *,
+        run_id: str,
+        source_id: str,
+        source_name: str,
+        region_code: str,
+    ) -> None:
+        self._log_context = {
+            "run_id": run_id,
+            "source_id": source_id,
+            "source_name": source_name,
+            "region_code": region_code,
+        }
 
     def get(
         self,
@@ -164,6 +181,7 @@ class HttpClient:
                         "http_status": None,
                         "url": self._safe_url(url),
                         "error": type(error).__name__,
+                        **self._log_context,
                     },
                 )
                 if attempt == self._max_attempts:
@@ -205,10 +223,10 @@ class HttpClient:
                 "request_attempt": attempt,
                 "http_status": status_code,
                 "url": self._safe_url(url),
+                **self._log_context,
             },
         )
 
     @staticmethod
     def _safe_url(url: str) -> str:
-        parsed = urlsplit(url)
-        return f"{parsed.scheme}://{parsed.hostname or ''}"
+        return safe_log_origin(url)

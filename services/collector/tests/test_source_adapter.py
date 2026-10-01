@@ -51,6 +51,19 @@ def test_adapter_stops_at_record_limit() -> None:
     assert adapter.requested_cursors == [None]
 
 
+def test_adapter_counts_page_request_before_fetch() -> None:
+    adapter = PagedAdapter(
+        pages={None: SourcePage((record("a"),), None)},
+        requested_cursors=[],
+    )
+    events: list[str] = []
+
+    pages = list(adapter.iter_pages("110000", on_request=lambda: events.append("request")))
+
+    assert len(pages) == 1
+    assert events == ["request"]
+
+
 def test_adapter_rejects_repeated_page_cursor() -> None:
     adapter = PagedAdapter(
         pages={

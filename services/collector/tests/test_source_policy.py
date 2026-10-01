@@ -5,7 +5,7 @@ from dataclasses import replace
 import pytest
 
 from eye_collector.exceptions import SourcePolicyError
-from eye_collector.models import SourceRegistration
+from eye_collector.models import RawRecord, SourceRegistration
 from eye_collector.policy import SourcePolicy
 
 
@@ -71,3 +71,20 @@ def test_permitted_payload_is_not_rewritten(approved_source: SourceRegistration)
     payload = {"name": "Fixture Clinic", "address": "Somewhere", "region": "110000"}
 
     assert SourcePolicy().authorize_payload(approved_source, payload) is payload
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "http://fixture.invalid/facility/1",
+        "https://other.invalid/facility/1",
+        "https://user:pass@fixture.invalid/facility/1",
+    ],
+)
+def test_record_url_must_remain_on_approved_https_origin(
+    approved_source: SourceRegistration, url: str
+) -> None:
+    record = RawRecord("clinic-1", url, {"name": "Clinic"})
+
+    with pytest.raises(SourcePolicyError, match="source origin"):
+        SourcePolicy().authorize_record(approved_source, record)
