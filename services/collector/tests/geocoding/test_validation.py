@@ -30,6 +30,7 @@ def result(
     precision: PrecisionLevel = PrecisionLevel.ROOFTOP,
     coordinate_system: CoordinateSystem = CoordinateSystem.WGS84,
     status: GeocodeStatus = GeocodeStatus.SUCCESS,
+    accuracy_m: int | None = 20,
 ) -> GeocodeResult:
     return GeocodeResult(
         provider_record_id="fixture-point",
@@ -40,7 +41,7 @@ def result(
         result_type="point",
         returned_address="Synthetic address",
         returned_adcode=returned_adcode,
-        accuracy_m=20,
+        accuracy_m=accuracy_m,
         status=status,
     )
 
@@ -73,6 +74,14 @@ def test_unrelated_region_codes_are_rejected() -> None:
 )
 def test_low_precision_is_never_verified(precision: PrecisionLevel) -> None:
     checked = validate_result(result(precision=precision), "110105", _PARENTS)
+
+    assert checked.status is ValidationStatus.NEEDS_REVIEW
+    assert checked.error_code is GeocodeErrorCode.LOW_PRECISION
+
+
+@pytest.mark.parametrize("accuracy_m", [None, -1, 101])
+def test_missing_or_unusable_accuracy_requires_review(accuracy_m: int | None) -> None:
+    checked = validate_result(result(accuracy_m=accuracy_m), "110105", _PARENTS)
 
     assert checked.status is ValidationStatus.NEEDS_REVIEW
     assert checked.error_code is GeocodeErrorCode.LOW_PRECISION

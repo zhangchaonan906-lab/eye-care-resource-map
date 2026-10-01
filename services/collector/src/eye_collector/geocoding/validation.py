@@ -131,4 +131,12 @@ def validate_result(
             longitude,
             latitude,
         )
+    if result.accuracy_m is None or not 0 <= result.accuracy_m <= 100:
+        return _failure(
+            ValidationStatus.NEEDS_REVIEW,
+            GeocodeErrorCode.LOW_PRECISION,
+            "provider_accuracy_missing_or_above_100m",
+            longitude,
+            latitude,
+        )
     return CoordinateValidation(ValidationStatus.VERIFIED, None, None, longitude, latitude)

@@ -100,7 +100,7 @@ CREATE TABLE app_private.candidate_locations (
                  AND latitude_wgs84 BETWEEN -0.01 AND 0.01)
         AND stored_coordinate_system = 'WGS84'
         AND precision_level IN ('rooftop', 'building')
-        AND accuracy_m IS NOT NULL
+        AND accuracy_m BETWEEN 0 AND 100
         AND returned_adcode IS NOT NULL
         AND error_code IS NULL
         AND validation_reason IS NULL

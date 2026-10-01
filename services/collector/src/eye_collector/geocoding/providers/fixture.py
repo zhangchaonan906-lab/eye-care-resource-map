@@ -15,16 +15,10 @@ from eye_collector.geocoding.models import (
     PrecisionLevel,
     ProviderPolicy,
 )
-from eye_collector.geocoding.providers.base import GeocodeProvider
+from eye_collector.geocoding.providers.base import GeocodeProvider, GeocodeProviderError
 from eye_collector.http import HttpClient
 
 _FIXTURE_ENDPOINT = "https://fixture.invalid/geocode"
-
-
-class GeocodeProviderError(RuntimeError):
-    def __init__(self, code: GeocodeErrorCode, message: str) -> None:
-        super().__init__(message)
-        self.code = code
 
 
 class FixtureGeocodeTransport(httpx.BaseTransport):
@@ -132,17 +126,20 @@ class FixtureGeocoder(GeocodeProvider):
         self,
         client: HttpClient,
         *,
+        policy: ProviderPolicy | None = None,
         quota_per_run: int = 1_000,
         requests_per_second: float = 5.0,
     ) -> None:
         self._client = client
-        self._policy = ProviderPolicy(
+        self._policy = policy or ProviderPolicy(
             provider="fixture",
             version="fixture-v1",
             persistent_storage_allowed=True,
             quota_per_run=quota_per_run,
             requests_per_second=requests_per_second,
         )
+        if self._policy.provider != "fixture" or self._policy.version != "fixture-v1":
+            raise ValueError("fixture geocoder requires the fixture-v1 provider policy")
         self._requests = 0
 
     @property
@@ -185,9 +182,7 @@ class FixtureGeocoder(GeocodeProvider):
         return self._parse_result(payload)
 
     @staticmethod
-    def _semantic_result(
-        status: GeocodeStatus, code: GeocodeErrorCode
-    ) -> GeocodeResult:
+    def _semantic_result(status: GeocodeStatus, code: GeocodeErrorCode) -> GeocodeResult:
         return GeocodeResult(
             provider_record_id=None,
             longitude=None,

@@ -50,6 +50,13 @@ BEGIN
     RAISE EXCEPTION 'candidate coordinate result fingerprint must be unique';
   END IF;
   IF NOT EXISTS (
+    SELECT 1 FROM pg_indexes
+    WHERE schemaname = 'app_private'
+      AND indexname = 'facilities_region_normalized_name_idx'
+  ) THEN
+    RAISE EXCEPTION 'P3 exact region and name candidate lookup must be indexed';
+  END IF;
+  IF NOT EXISTS (
     SELECT 1 FROM pg_trigger
     WHERE tgrelid = 'app_private.candidate_locations'::regclass
       AND tgname = 'candidate_location_provider_policy_trg'
@@ -69,7 +76,9 @@ BEGIN
     RAISE EXCEPTION 'only the synthetic fixture provider is approved for coordinate persistence';
   END IF;
   IF has_table_privilege('eye_geocode', 'app_private.geocode_provider_policies', 'UPDATE')
-    OR has_table_privilege('eye_geocode', 'app_private.geocode_provider_policies', 'INSERT') THEN
+    OR has_table_privilege('eye_geocode', 'app_private.geocode_provider_policies', 'INSERT')
+    OR has_table_privilege('eye_geocode', 'app_private.candidate_locations', 'UPDATE')
+    OR has_table_privilege('eye_geocode', 'app_private.candidate_locations', 'DELETE') THEN
     RAISE EXCEPTION 'geocode runtime must not approve its own provider policy';
   END IF;
 END $$;

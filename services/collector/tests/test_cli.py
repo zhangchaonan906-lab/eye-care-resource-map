@@ -75,6 +75,27 @@ def test_cli_parser_accepts_source_region_limit_and_dry_run() -> None:
     assert args.dry_run is True
 
 
+def test_cli_parser_accepts_fixture_geocode_dry_run() -> None:
+    args = build_parser().parse_args(
+        [
+            "geocode",
+            "--provider",
+            "fixture",
+            "--limit",
+            "5",
+            "--candidate-id",
+            "123e4567-e89b-12d3-a456-426614174000",
+            "--dry-run",
+        ]
+    )
+
+    assert args.command == "geocode"
+    assert args.provider == "fixture"
+    assert args.limit == 5
+    assert args.candidate_id == "123e4567-e89b-12d3-a456-426614174000"
+    assert args.dry_run is True
+
+
 def test_cli_fixture_dry_run_outputs_structured_stats(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:

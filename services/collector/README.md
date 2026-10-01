@@ -21,7 +21,7 @@ Linux/macOS 激活方式为 `source .venv/bin/activate`。
 
 `DATABASE_URL` 应使用单独登录角色，该登录角色只继承数据库角色 `eye_collector`。migration `004_collector_permissions.sql` 只授予读取来源登记、有限读写 `import_runs`、写入/读取 `source_records` 的权限。collector 不能写 `facilities`、`candidate_records`、证据、位置、重复案件或发布视图。
 
-运行完整数据库检查（临时启动 PostGIS、应用 P1/P2 migrations、运行 SQL tests、创建临时最小权限登录、运行数据库集成测试并清理 volume）：
+运行完整数据库检查（临时启动 PostGIS、应用 P1–P4 migrations、运行 SQL tests、创建临时最小权限登录、运行数据库集成测试并清理 volume）：
 
 ```powershell
 pwsh -NoProfile -File scripts/test-db.ps1
@@ -35,7 +35,7 @@ Linux CI 等价入口是仓库根目录的 `scripts/test-db.sh`。两个脚本�
 $env:EYE_MAP_POSTGRES_PASSWORD = [Convert]::ToHexString([Security.Cryptography.RandomNumberGenerator]::GetBytes(32))
 $env:EYE_MAP_DB_PORT = "55432"
 docker compose up -d --wait
-foreach ($migration in @('001_core.sql', '002_evidence_location.sql', '003_published_view.sql', '004_collector_permissions.sql', '005_etl_candidates.sql')) {
+foreach ($migration in @('001_core.sql', '002_evidence_location.sql', '003_published_view.sql', '004_collector_permissions.sql', '005_etl_candidates.sql', '006_geocoding.sql')) {
   docker compose exec -T db psql -U eye -d eye -v ON_ERROR_STOP=1 -f "/workspace/db/migrations/$migration"
   if ($LASTEXITCODE -ne 0) { throw "Migration failed: $migration" }
 }
@@ -46,6 +46,9 @@ $env:DATABASE_URL = "postgresql://eye_collector_runtime:$collectorPassword@127.0
 $etlPassword = [Convert]::ToHexString([Security.Cryptography.RandomNumberGenerator]::GetBytes(32))
 docker compose exec -T db psql -U eye -d eye -v "etl_password=$etlPassword" -f /workspace/scripts/provision-etl-login.sql
 $env:ETL_DATABASE_URL = "postgresql://eye_etl_runtime:$etlPassword@127.0.0.1:55432/eye"
+$geocodePassword = [Convert]::ToHexString([Security.Cryptography.RandomNumberGenerator]::GetBytes(32))
+docker compose exec -T db psql -U eye -d eye -v "geocode_password=$geocodePassword" -f /workspace/scripts/provision-geocode-login.sql
+$env:GEOCODE_DATABASE_URL = "postgresql://eye_geocode_runtime:$geocodePassword@127.0.0.1:55432/eye"
 ```
 
 Fixture seed 仅创建合成来源及用于测试拒绝路径的 pending/suspended/blocked 登记。
@@ -77,12 +80,29 @@ $env:ETL_DATABASE_URL = "postgresql://eye_etl_runtime:<password>@127.0.0.1:55432
 py -m eye_collector.cli process --limit 100
 ```
 
-命令只读取已批准并允许自动采集的来源快照，输出 JSON 处理统计。它不修改原始快照、不写正式医院表，也不发布或合并医院。无名称的快照会被跳过；重新执行不会重复创建已处理候选。
+命令只读取已批准并允许自动采集的来源快照，输出 JSON 处理统计。它不修改原始快照、不写正式医院表，也不发布或合并医院。无名称快照以当前 pipeline version 记录为终态跳过；重新执行不会反复读取这些快照，也不会重复创建已处理候选。
+
+## P4 候选坐标处理
+
+P4 只提供离线 `fixture` geocoder。provider 通过现有受限 HTTP client，因此使用相同的超时、响应体上限、重试和速率控制。真实地图/地理编码 provider 尚未获准接入；CLI 不接受其他 provider，集成测试只使用 mock transport。
+
+配置独立的 `GEOCODE_DATABASE_URL`，登录角色只继承 `eye_geocode`。该角色可读取候选、证据、行政区与 provider policy，并只可向 `candidate_locations` 插入记录；不能修改 source/facility、正式位置或发布视图。数据库 provider policy 缺失时处理失败；持久化许可关闭时不调用 provider，仅写入不含 provider 返回数据的 `POLICY_BLOCKED` review 结果。
+
+```powershell
+$env:GEOCODE_DATABASE_URL = "postgresql://eye_geocode_runtime:<password>@127.0.0.1:55432/eye"
+py -m eye_collector.cli geocode --provider fixture --dry-run --limit 20
+py -m eye_collector.cli geocode --provider fixture --limit 20
+py -m eye_collector.cli geocode --provider fixture --candidate-id 123e4567-e89b-12d3-a456-426614174000 --dry-run
+```
+
+Dry-run 会请求离线 fixture 并执行坐标、精度和 `regions.parent_id` 层级校验，但不写入结果。正式运行只写 `candidate_locations` staging，原始 provider 坐标系和转换后的 WGS84 坐标分别记录；未验证、低精度或区域不明的结果进入 review，坐标不进入 `facility_locations`。地址/结果使用 canonical SHA-256 指纹，provider/version 下已有结果的候选不会重复请求。
+
+WGS84 保持原值，GCJ-02 使用本地逆转换后转存 WGS84，UNKNOWN 系统不能成为 verified 坐标。已验证精度仅 rooftop/building，且要求中国范围、非 Null Island、行政区层级一致及 provider accuracy 0–100m。P4 没有真实 provider 授权、没有真实坐标记录、没有北京/广东试点或 facility 发布流程。
 
 ## 测试、lint 与类型检查
 
 ```powershell
-py -m pytest tests -m "not database and not etl_database" -q
+py -m pytest tests -m "not database and not etl_database and not geocode_database" -q
 py -m ruff check src tests
 py -m mypy src/eye_collector
 pwsh -NoProfile -File scripts/test-db.ps1

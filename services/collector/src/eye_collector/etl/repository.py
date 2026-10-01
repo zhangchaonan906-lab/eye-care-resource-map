@@ -92,7 +92,7 @@ class ETLRepository:
             LEFT JOIN app_private.organizations o ON o.id = f.organization_id
             WHERE f.verification_status <> 'withdrawn'
               AND (
-                (o.registration_id = %s AND %s IS NOT NULL)
+                (o.registration_id = %s AND %s::text IS NOT NULL)
                 OR (r.adcode = %s AND f.normalized_name = %s)
               )
             ORDER BY f.id
