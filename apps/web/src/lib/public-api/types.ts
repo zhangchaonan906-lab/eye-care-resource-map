@@ -11,6 +11,14 @@ export const MAX_MAP_ZOOM = 24;
 
 export type FacilityCategory = (typeof FACILITY_CATEGORIES)[number];
 
+export const FACILITY_CATEGORY_LABELS: Record<FacilityCategory, string> = {
+  eye_specialty_hospital: "眼科专科医院",
+  general_hospital_ophthalmology: "设有眼科的综合医院",
+  ophthalmology_center: "眼科中心",
+  eye_clinic: "眼科诊所",
+  unknown: "待核验",
+};
+
 export type PublicFacility = {
   id: string;
   name: string;

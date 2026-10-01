@@ -3,9 +3,10 @@ import { notFound } from "next/navigation";
 import { FacilityDetailContent } from "../../../features/eye-map/facility-detail-content";
 import { parseUuid, ValidationError } from "../../../lib/public-api/validation";
 import { getPublicFacilityRepository } from "../../../lib/public-api/repository";
-import { formatFacilityCategory } from "../../../features/eye-map/facility-presentation";
 
 type PageProps = { params: Promise<{ id: string }> };
+
+export const dynamic = "force-dynamic";
 
 async function findPublishedFacility(id: string) {
   try {
@@ -20,7 +21,7 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
   const { id } = await params;
   const facility = await findPublishedFacility(id);
   if (!facility) return {};
-  const description = [facility.name, formatFacilityCategory(facility.category), facility.address, facility.region.name]
+  const description = [facility.region.name, facility.address, facility.ophthalmology.status === "verified" ? "已核验眼科医疗资源" : null]
     .filter(Boolean)
     .join(" · ");
   return {

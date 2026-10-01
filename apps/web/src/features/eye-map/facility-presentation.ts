@@ -1,15 +1,7 @@
-import type { FacilityCategory } from "../../lib/public-api/types";
-
-const CATEGORY_LABELS: Record<FacilityCategory, string> = {
-  eye_specialty_hospital: "眼科专科医院",
-  general_hospital_ophthalmology: "设有眼科的综合医院",
-  ophthalmology_center: "眼科中心",
-  eye_clinic: "眼科诊所",
-  unknown: "待核验",
-};
+import { FACILITY_CATEGORY_LABELS, type FacilityCategory } from "../../lib/public-api/types";
 
 export function formatFacilityCategory(category: FacilityCategory, labels: Map<string, string> = new Map()): string {
-  return labels.get(category) ?? CATEGORY_LABELS[category] ?? "医疗机构";
+  return labels.get(category) ?? FACILITY_CATEGORY_LABELS[category] ?? "医疗机构";
 }
 
 export function safeSourceUrl(value: string): string | null {

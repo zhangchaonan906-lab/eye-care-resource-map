@@ -11,10 +11,12 @@ P10 adds paginated facility-name search, public detail pages at `/hospitals/{id}
 - Changing the query, category, or region clears the cursor and aborts the pending page request. Stale first-page responses are ignored as well.
 - A failed later page keeps earlier results visible and offers a retry.
 - Result rows include the public name, category, region, and address. The result button selects the facility on the map; the separate “详情” link opens its shareable page.
+- Search remains name-prefix search with the current 2, 4, or 6 digit region-code prefix and category filter. Full region selection is deferred until complete public region metadata exists; no nationwide city list is hard-coded.
+- Campus-aware search is deferred because the public API projection used here does not expose campus names. P10 does not read campus fields from private tables.
 
 ## Public facility detail
 
-`/hospitals/{id}` reads through `getPublicFacilityRepository().getById()`, which selects only from `public.published_facility_api`. Invalid UUIDs and IDs absent from that published-only projection use the same not-found page. Direct page loads and refreshes are handled by the App Router server page.
+`/hospitals/{id}` is force-dynamic and reads through `getPublicFacilityRepository().getById()`, which selects only from `public.published_facility_api`. Invalid UUIDs and IDs absent from that published-only projection use the same not-found page. Direct page loads and refreshes are handled by the App Router server page, and the page does not cache facility details.
 
 The page displays public name, category, address, region, optional hospital level and grade, verified ophthalmology status, last verification date, and source attribution. It omits internal IDs, raw source payloads, evidence counts, and private fields. Attribution links are clickable only for HTTPS URLs and open with `noopener noreferrer`. Missing source attribution or dates are shown as “公开来源信息暂缺”.
 

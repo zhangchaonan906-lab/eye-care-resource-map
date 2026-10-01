@@ -57,7 +57,7 @@ describe("hospital detail route", () => {
     mocks.getById.mockResolvedValue(facility);
     await expect(generateMetadata({ params: Promise.resolve({ id: facility.id }) })).resolves.toEqual({
       title: "公开眼科医院｜全国眼科医疗资源地图",
-      description: "公开眼科医院 · 眼科专科医院 · 示例路 1 号 · 北京市东城区",
+      description: "北京市东城区 · 示例路 1 号 · 已核验眼科医疗资源",
     });
     mocks.getById.mockResolvedValue(null);
     await expect(generateMetadata({ params: Promise.resolve({ id: facility.id }) })).resolves.toEqual({});
