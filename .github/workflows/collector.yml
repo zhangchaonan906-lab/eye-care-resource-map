@@ -25,7 +25,7 @@ jobs:
           python-version: "3.12"
 
       - name: Install collector and development tools
-        run: python -m pip install -e "services/collector[dev]"
+        run: python -m pip install --index-url https://pypi.org/simple -e "services/collector[dev]"
 
       - name: Run unit tests
         working-directory: services/collector

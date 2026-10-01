@@ -30,6 +30,7 @@ class Provider:
 class Repository:
     candidates: list[GeocodeCandidate]
     storage_allowed: bool = True
+    ignore_limit: bool = False
 
     def __post_init__(self) -> None:
         self.saved: list[tuple[object, ...]] = []
@@ -46,7 +47,9 @@ class Repository:
                 for item in self.candidates
                 if item.candidate_record_id == candidate_record_id
             ]
-        return self.candidates[:limit] if limit else self.candidates
+        if self.ignore_limit or limit is None:
+            return self.candidates
+        return self.candidates[:limit]
 
     def count_processed(self, policy: ProviderPolicy) -> int:
         return 0
@@ -145,3 +148,41 @@ def test_missing_address_is_recorded_as_no_result_without_provider_call() -> Non
     assert stats.no_result == 1
     assert provider.requests == []
     assert len(repository.saved) == 1
+
+
+def test_pipeline_enforces_policy_quota_even_if_repository_ignores_limit() -> None:
+    policy = ProviderPolicy("fixture", "fixture-v1", True, 10)
+    provider = Provider(result())
+    provider.policy = policy
+    candidates = [candidate(f"address-{index}") for index in range(100)]
+    repository = Repository(candidates, ignore_limit=True)
+
+    stats = GeocodingPipeline(repository, provider).run(limit=100)
+
+    assert stats.candidates_read == 10
+    assert stats.geocode_requested == 10
+    assert len(provider.requests) == 10
+
+
+def test_pipeline_enforces_provider_rate_limit_independently() -> None:
+    policy = ProviderPolicy("fixture", "fixture-v1", True, 10, requests_per_second=2)
+    provider = Provider(result())
+    provider.policy = policy
+    now = [0.0]
+    sleeps: list[float] = []
+
+    def clock() -> float:
+        return now[0]
+
+    def sleep(seconds: float) -> None:
+        sleeps.append(seconds)
+        now[0] += seconds
+
+    repository = Repository([candidate(), candidate("2")])
+    pipeline = GeocodingPipeline(
+        provider=provider, repository=repository, clock=clock, sleeper=sleep
+    )
+
+    pipeline.run()
+
+    assert sleeps == [0.5]

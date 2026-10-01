@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import logging
+import time
+from collections.abc import Callable
 from dataclasses import replace
 from datetime import UTC, datetime
 from typing import Protocol
@@ -90,10 +92,14 @@ class GeocodingPipeline:
         provider: GeocodeProvider,
         *,
         logger: logging.Logger | None = None,
+        clock: Callable[[], float] = time.monotonic,
+        sleeper: Callable[[float], None] = time.sleep,
     ) -> None:
         self._repository = repository
         self._provider = provider
         self._logger = logger or logging.getLogger("eye_collector.geocoding")
+        self._clock = clock
+        self._sleeper = sleeper
 
     def run(
         self,
@@ -105,7 +111,16 @@ class GeocodingPipeline:
         if limit is not None and limit < 1:
             raise ValueError("limit must be a positive integer")
         policy = self._provider.policy
-        candidates = self._repository.fetch_pending(policy, limit, candidate_record_id)
+        bounded_limit = (
+            min(limit, policy.quota_per_run) if limit is not None else policy.quota_per_run
+        )
+        candidates = (
+            self._repository.fetch_pending(policy, bounded_limit, candidate_record_id)
+            if bounded_limit > 0
+            else []
+        )
+        # Enforce the DB policy even when a repository implementation ignores LIMIT.
+        candidates = candidates[:bounded_limit]
         counts = {key: 0 for key in GeocodeStats().as_dict()}
         counts["candidates_read"] = len(candidates)
         counts["already_processed"] = self._repository.count_processed(policy)
@@ -118,6 +133,7 @@ class GeocodingPipeline:
         )
         storage_allowed = self._repository.persistent_storage_allowed(policy)
 
+        next_request_at: float | None = None
         for candidate in candidates:
             request_at = datetime.now(UTC)
             address = candidate.address or ""
@@ -141,6 +157,11 @@ class GeocodingPipeline:
                     )
                 elif address.strip():
                     counts["geocode_requested"] += 1
+                    if next_request_at is not None:
+                        wait = max(0.0, next_request_at - self._clock())
+                        if wait > 0:
+                            self._sleeper(wait)
+                    next_request_at = self._clock() + 1.0 / policy.requests_per_second
                     result = self._provider.geocode(address, candidate.administrative_code)
                     if result.accuracy_m is not None and result.accuracy_m < 0:
                         result = replace(result, accuracy_m=None)

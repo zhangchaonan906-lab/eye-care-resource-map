@@ -96,6 +96,58 @@ def test_cli_parser_accepts_fixture_geocode_dry_run() -> None:
     assert args.dry_run is True
 
 
+def test_pilot_parser_requires_region_source_and_explicit_limit() -> None:
+    with pytest.raises(SystemExit):
+        build_parser().parse_args(["pilot", "--source", "beijing-registry", "--region", "110000"])
+
+    args = build_parser().parse_args(
+        [
+            "pilot",
+            "--source",
+            "beijing-registry",
+            "--region",
+            "110000",
+            "--limit",
+            "50",
+            "--dry-run",
+        ]
+    )
+    assert args.source == "beijing-registry"
+    assert args.region == "110000"
+    assert args.limit == 50
+    assert args.dry_run is True
+
+
+def test_pilot_fails_closed_without_explicit_real_data_opt_in(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.delenv("PILOT_REAL_DATA", raising=False)
+
+    exit_code = main(
+        ["pilot", "--source", "beijing-registry", "--region", "110000", "--limit", "50"]
+    )
+
+    output = capsys.readouterr()
+    assert exit_code == 2
+    assert "PILOT_REAL_DATA=true" in output.err
+    assert output.out == ""
+
+
+def test_pilot_stays_blocked_after_opt_in_when_source_gate_is_not_approved(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setenv("PILOT_REAL_DATA", "true")
+
+    exit_code = main(
+        ["pilot", "--source", "beijing-registry", "--region", "110000", "--limit", "50"]
+    )
+
+    output = capsys.readouterr()
+    assert exit_code == 2
+    assert "P5-A source approval is incomplete" in output.err
+    assert output.out == ""
+
+
 def test_cli_fixture_dry_run_outputs_structured_stats(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
