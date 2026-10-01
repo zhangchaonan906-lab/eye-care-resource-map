@@ -209,6 +209,8 @@ Run: `git add db/tests/001_core.sql db/migrations/001_core.sql; git commit -m "f
 
 ## Task 3: 来源证据、候选与空间位置
 
+契约：重复候选使用 `duplicate_case_candidates` 关联表，以复合主键拒绝重复成员，外键保证候选存在，删除案件级联清理成员。pending 案件允许逐行组装；P11 解决案件的事务必须检查成员至少为 2，并在后续成员变更中维护该规则。`matched` 候选必须关联机构，`unmatched`/`rejected` 必须没有机构，`needs_review` 两种均允许。坐标通过 `coordinate_source_record_id` 追溯具体来源快照。导入区域为六位数字，running 的结束时间必须为空，终态必须非空。测试覆盖合法匹配、候选状态矛盾、成员外键/唯一性/级联、坐标来源外键、区域与结束时间约束。
+
 **Files:**
 - Create: `db/tests/002_evidence_location.sql`
 - Create: `db/migrations/002_evidence_location.sql`
@@ -245,10 +247,10 @@ VALUES ('00000000-0000-0000-0000-000000000013',
   '00000000-0000-0000-0000-000000000015', 'ophthalmology_status',
   '"verified"'::jsonb, 1.0);
 INSERT INTO app_private.facility_locations
-  (facility_id, geog_wgs84, coordinate_source_id, location_status)
+  (facility_id, geog_wgs84, coordinate_source_record_id, location_status)
 VALUES ('00000000-0000-0000-0000-000000000013',
   ST_SetSRID(ST_MakePoint(113.2644, 23.1291), 4326)::geography,
-  '00000000-0000-0000-0000-000000000012', 'verified');
+  '00000000-0000-0000-0000-000000000015', 'verified');
 DO $$
 BEGIN
   IF NOT EXISTS (
@@ -270,6 +272,101 @@ BEGIN
     NULL;
   END;
 END $$;
+INSERT INTO app_private.source_records
+  (id, source_id, source_key, raw_payload, source_url, content_hash, import_run_id)
+VALUES ('00000000-0000-0000-0000-000000000016',
+  '00000000-0000-0000-0000-000000000012', 'hospital-2', '{}',
+  'https://example.org/guangdong/2', repeat('b', 64),
+  '00000000-0000-0000-0000-000000000014');
+INSERT INTO app_private.candidate_records
+  (id, source_record_id, parsed_fields, match_status, proposed_facility_id)
+VALUES
+  ('00000000-0000-0000-0000-000000000017',
+   '00000000-0000-0000-0000-000000000015', '{}', 'matched',
+   '00000000-0000-0000-0000-000000000013'),
+  ('00000000-0000-0000-0000-000000000018',
+   '00000000-0000-0000-0000-000000000016', '{}', 'unmatched', NULL);
+-- Pending cases may be assembled one membership at a time.
+INSERT INTO app_private.duplicate_cases (id, reason)
+VALUES ('00000000-0000-0000-0000-000000000019', '测试重复候选');
+INSERT INTO app_private.duplicate_case_candidates (duplicate_case_id, candidate_record_id)
+VALUES
+  ('00000000-0000-0000-0000-000000000019', '00000000-0000-0000-0000-000000000017'),
+  ('00000000-0000-0000-0000-000000000019', '00000000-0000-0000-0000-000000000018');
+INSERT INTO app_private.import_runs (source_id, region_code, status, ended_at)
+VALUES ('00000000-0000-0000-0000-000000000012', '440000', 'succeeded', now());
+DO $$
+BEGIN
+  IF (SELECT count(*) FROM app_private.duplicate_case_candidates
+      WHERE duplicate_case_id = '00000000-0000-0000-0000-000000000019') <> 2 THEN
+    RAISE EXCEPTION 'duplicate case membership count is wrong';
+  END IF;
+  BEGIN
+    INSERT INTO app_private.duplicate_case_candidates VALUES
+      ('00000000-0000-0000-0000-000000000019', '00000000-0000-0000-0000-000000000099');
+    RAISE EXCEPTION 'nonexistent candidate membership was accepted';
+  EXCEPTION WHEN foreign_key_violation THEN NULL;
+  END;
+  BEGIN
+    INSERT INTO app_private.duplicate_case_candidates VALUES
+      ('00000000-0000-0000-0000-000000000019', '00000000-0000-0000-0000-000000000017');
+    RAISE EXCEPTION 'duplicate candidate membership was accepted';
+  EXCEPTION WHEN unique_violation THEN NULL;
+  END;
+  BEGIN
+    UPDATE app_private.candidate_records SET proposed_facility_id = NULL
+      WHERE id = '00000000-0000-0000-0000-000000000017';
+    RAISE EXCEPTION 'matched candidate without facility was accepted';
+  EXCEPTION WHEN check_violation THEN NULL;
+  END;
+  BEGIN
+    UPDATE app_private.candidate_records
+      SET proposed_facility_id = '00000000-0000-0000-0000-000000000013'
+      WHERE id = '00000000-0000-0000-0000-000000000018';
+    RAISE EXCEPTION 'unmatched candidate with facility was accepted';
+  EXCEPTION WHEN check_violation THEN NULL;
+  END;
+  BEGIN
+    UPDATE app_private.candidate_records SET match_status = 'rejected'
+      WHERE id = '00000000-0000-0000-0000-000000000017';
+    RAISE EXCEPTION 'rejected candidate with facility was accepted';
+  EXCEPTION WHEN check_violation THEN NULL;
+  END;
+  UPDATE app_private.candidate_records SET match_status = 'needs_review'
+    WHERE id IN ('00000000-0000-0000-0000-000000000017', '00000000-0000-0000-0000-000000000018');
+  UPDATE app_private.candidate_records SET match_status = 'rejected'
+    WHERE id = '00000000-0000-0000-0000-000000000018';
+  BEGIN
+    INSERT INTO app_private.import_runs (source_id, region_code, status)
+    VALUES ('00000000-0000-0000-0000-000000000012', '440000', 'failed');
+    RAISE EXCEPTION 'terminal import without ended_at was accepted';
+  EXCEPTION WHEN check_violation THEN NULL;
+  END;
+  BEGIN
+    INSERT INTO app_private.import_runs (source_id, region_code, status, ended_at)
+    VALUES ('00000000-0000-0000-0000-000000000012', '440000', 'running', now());
+    RAISE EXCEPTION 'running import with ended_at was accepted';
+  EXCEPTION WHEN check_violation THEN NULL;
+  END;
+  BEGIN
+    INSERT INTO app_private.import_runs (source_id, region_code, status)
+    VALUES ('00000000-0000-0000-0000-000000000012', '44000', 'running');
+    RAISE EXCEPTION 'invalid import region code was accepted';
+  EXCEPTION WHEN check_violation THEN NULL;
+  END;
+  BEGIN
+    UPDATE app_private.facility_locations
+      SET coordinate_source_record_id = '00000000-0000-0000-0000-000000000099'
+      WHERE facility_id = '00000000-0000-0000-0000-000000000013';
+    RAISE EXCEPTION 'nonexistent coordinate source record was accepted';
+  EXCEPTION WHEN foreign_key_violation THEN NULL;
+  END;
+  DELETE FROM app_private.duplicate_cases WHERE id = '00000000-0000-0000-0000-000000000019';
+  IF EXISTS (SELECT 1 FROM app_private.duplicate_case_candidates
+      WHERE duplicate_case_id = '00000000-0000-0000-0000-000000000019') THEN
+    RAISE EXCEPTION 'duplicate case deletion did not cascade';
+  END IF;
+END $$;
 ROLLBACK;
 ```
 
@@ -277,7 +374,7 @@ ROLLBACK;
 
 Run: `docker compose exec -T db psql -U eye -d eye -v ON_ERROR_STOP=1 -f /workspace/db/tests/002_evidence_location.sql`
 
-Expected: 非零退出，提示 `relation "app_private.import_runs" does not exist`。
+Expected: 在仅应用 001_core 的新库中非零退出，提示 `relation "app_private.import_runs" does not exist`。审核修复时使用独立项目 `eye-p1-task3-review`：先运行 `docker compose -p eye-p1-task3-review up -d --wait` 和 001_core 迁移，再以相同 `-p` 参数运行测试。原版 002 迁移后，新测试还应因缺少 `coordinate_source_record_id` 失败。
 
 - [ ] **Step 3: 实现来源与坐标迁移**
 
@@ -290,12 +387,14 @@ SET LOCAL search_path = app_private, public, extensions;
 CREATE TABLE app_private.import_runs (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   source_id uuid NOT NULL REFERENCES app_private.source_catalog(id),
-  region_code text NOT NULL,
+  region_code text NOT NULL CHECK (region_code ~ '^[0-9]{6}$'),
   started_at timestamptz NOT NULL DEFAULT now(),
   ended_at timestamptz,
   status text NOT NULL CHECK (status IN ('running', 'succeeded', 'failed', 'cancelled')),
   counts jsonb NOT NULL DEFAULT '{}'::jsonb,
-  error_summary text
+  error_summary text,
+  CHECK ((status = 'running' AND ended_at IS NULL)
+    OR (status IN ('succeeded', 'failed', 'cancelled') AND ended_at IS NOT NULL))
 );
 CREATE TABLE app_private.source_records (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -314,7 +413,10 @@ CREATE TABLE app_private.candidate_records (
   parsed_fields jsonb NOT NULL,
   match_status text NOT NULL DEFAULT 'unmatched'
     CHECK (match_status IN ('unmatched', 'matched', 'needs_review', 'rejected')),
-  proposed_facility_id uuid REFERENCES app_private.facilities(id)
+  proposed_facility_id uuid REFERENCES app_private.facilities(id),
+  CHECK ((match_status = 'matched' AND proposed_facility_id IS NOT NULL)
+    OR (match_status IN ('unmatched', 'rejected') AND proposed_facility_id IS NULL)
+    OR match_status = 'needs_review')
 );
 CREATE TABLE app_private.facility_evidence (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -328,7 +430,6 @@ CREATE TABLE app_private.facility_evidence (
 );
 CREATE TABLE app_private.duplicate_cases (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  candidate_ids uuid[] NOT NULL CHECK (cardinality(candidate_ids) >= 2),
   reason text NOT NULL,
   score numeric(3,2) CHECK (score BETWEEN 0 AND 1),
   resolution text NOT NULL DEFAULT 'pending'
@@ -336,10 +437,17 @@ CREATE TABLE app_private.duplicate_cases (
   reviewer_id uuid,
   resolved_at timestamptz
 );
+-- Pending cases allow incremental membership assembly. P11 must ensure >=2
+-- members in the transaction that resolves a case, and preserve that invariant.
+CREATE TABLE app_private.duplicate_case_candidates (
+  duplicate_case_id uuid NOT NULL REFERENCES app_private.duplicate_cases(id) ON DELETE CASCADE,
+  candidate_record_id uuid NOT NULL REFERENCES app_private.candidate_records(id),
+  PRIMARY KEY (duplicate_case_id, candidate_record_id)
+);
 CREATE TABLE app_private.facility_locations (
   facility_id uuid PRIMARY KEY REFERENCES app_private.facilities(id) ON DELETE CASCADE,
   geog_wgs84 geography(Point, 4326) NOT NULL,
-  coordinate_source_id uuid NOT NULL REFERENCES app_private.source_catalog(id),
+  coordinate_source_record_id uuid NOT NULL REFERENCES app_private.source_records(id),
   accuracy_m integer CHECK (accuracy_m IS NULL OR accuracy_m >= 0),
   location_status text NOT NULL DEFAULT 'candidate'
     CHECK (location_status IN ('candidate', 'verified', 'rejected')),
@@ -362,7 +470,7 @@ COMMIT;
 
 Run: `docker compose exec -T db psql -U eye -d eye -v ON_ERROR_STOP=1 -f /workspace/db/migrations/002_evidence_location.sql`
 
-Expected: `COMMIT`。再运行 Step 2 的测试命令，Expected: `ROLLBACK` 且 exit code 0。
+Expected: `COMMIT`。审核修复应先运行 `docker compose -p eye-p1-task3-review down --volumes`，重建该专用测试项目，再依次应用 001_core、002_evidence_location；所有命令添加 `-p eye-p1-task3-review`。随后运行 001_core 与 002_evidence_location 两组测试，Expected: 两组均 `ROLLBACK` 且 exit code 0。再验证 `docker compose -p eye-p1-task3-review config --quiet`、数据库 healthy 与 `select current_database()` 输出 `eye`，最后清理该临时项目。
 
 - [ ] **Step 5: Commit**
 
@@ -386,9 +494,9 @@ INSERT INTO app_private.regions (id, adcode, name, level, version)
 VALUES ('00000000-0000-0000-0000-000000000021', '110000', '北京市', 'province', '2026');
 INSERT INTO app_private.source_catalog (id, name, url, use_basis, status)
 VALUES ('00000000-0000-0000-0000-000000000022', '已准入来源', 'https://example.org/source', '测试许可', 'approved');
-INSERT INTO app_private.import_runs (id, source_id, region_code, status)
+INSERT INTO app_private.import_runs (id, source_id, region_code, status, ended_at)
 VALUES ('00000000-0000-0000-0000-000000000023',
-  '00000000-0000-0000-0000-000000000022', '110000', 'succeeded');
+  '00000000-0000-0000-0000-000000000022', '110000', 'succeeded', now());
 INSERT INTO app_private.source_records
   (id, source_id, source_key, raw_payload, source_url, content_hash, import_run_id)
 VALUES ('00000000-0000-0000-0000-000000000024',
@@ -406,14 +514,14 @@ VALUES
    'eye_specialty_hospital', '00000000-0000-0000-0000-000000000021',
    '北京市测试路2号', 'verified', 'published', now(), now());
 INSERT INTO app_private.facility_locations
-  (facility_id, geog_wgs84, coordinate_source_id, location_status, verified_at)
+  (facility_id, geog_wgs84, coordinate_source_record_id, location_status, verified_at)
 VALUES
   ('00000000-0000-0000-0000-000000000025',
    ST_SetSRID(ST_MakePoint(116.4, 39.9), 4326)::geography,
-   '00000000-0000-0000-0000-000000000022', 'verified', now()),
+   '00000000-0000-0000-0000-000000000024', 'verified', now()),
   ('00000000-0000-0000-0000-000000000026',
    ST_SetSRID(ST_MakePoint(116.41, 39.91), 4326)::geography,
-   '00000000-0000-0000-0000-000000000022', 'verified', now());
+   '00000000-0000-0000-0000-000000000024', 'verified', now());
 INSERT INTO app_private.facility_evidence
   (facility_id, source_record_id, field_name, field_value, confidence)
 VALUES
@@ -479,8 +587,10 @@ SELECT f.id, f.name, f.campus_name, f.category, f.address,
 FROM app_private.facilities AS f
 JOIN app_private.regions AS r ON r.id = f.region_id
 JOIN app_private.facility_locations AS l ON l.facility_id = f.id
+JOIN app_private.source_records AS coordinate_record
+  ON coordinate_record.id = l.coordinate_source_record_id
 JOIN app_private.source_catalog AS coordinate_source
-  ON coordinate_source.id = l.coordinate_source_id
+  ON coordinate_source.id = coordinate_record.source_id
 WHERE f.verification_status = 'published'
   AND f.published_at IS NOT NULL
   AND f.last_verified_at IS NOT NULL
