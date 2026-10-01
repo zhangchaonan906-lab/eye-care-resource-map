@@ -46,6 +46,8 @@ compose exec -T db psql -h 127.0.0.1 -U eye -d eye -v ON_ERROR_STOP=1 \
 compose exec -T db psql -h 127.0.0.1 -U eye -d eye -v ON_ERROR_STOP=1 \
   -f /workspace/db/migrations/007_source_open_data_rights.sql
 compose exec -T db psql -h 127.0.0.1 -U eye -d eye -v ON_ERROR_STOP=1 \
+  -f /workspace/db/migrations/008_source_file_provenance.sql
+compose exec -T db psql -h 127.0.0.1 -U eye -d eye -v ON_ERROR_STOP=1 \
   -f /workspace/scripts/seed-opendata-sources.sql
 
 for sql_file in \

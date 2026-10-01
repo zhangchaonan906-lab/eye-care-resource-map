@@ -7,7 +7,12 @@ from psycopg.rows import tuple_row
 from psycopg.types.json import Jsonb
 
 from eye_collector.exceptions import SourcePolicyError
-from eye_collector.models import RawRecord, SourceDescriptor, SourceRegistration
+from eye_collector.models import (
+    FileImportProvenance,
+    RawRecord,
+    SourceDescriptor,
+    SourceRegistration,
+)
 from eye_collector.policy import SourcePolicy
 
 
@@ -31,14 +36,46 @@ class PostgresRepository:
         policy: SourcePolicy,
     ) -> tuple[str, SourceRegistration]:
         """Lock, approve, and insert a running import in one transaction."""
+        if descriptor.access_method == "file":
+            raise SourcePolicyError("manual file imports require file provenance")
+        return self._start_approved_run(descriptor, region_code, policy)
+
+    def start_approved_file_run(
+        self,
+        descriptor: SourceDescriptor,
+        region_code: str,
+        policy: SourcePolicy,
+        provenance: FileImportProvenance,
+    ) -> tuple[str, SourceRegistration]:
+        if descriptor.access_method != "file":
+            raise SourcePolicyError("file provenance is only valid for manual file imports")
+        return self._start_approved_run(descriptor, region_code, policy, provenance)
+
+    def _start_approved_run(
+        self,
+        descriptor: SourceDescriptor,
+        region_code: str,
+        policy: SourcePolicy,
+        provenance: FileImportProvenance | None = None,
+    ) -> tuple[str, SourceRegistration]:
+        """Authorize a source and atomically insert an import run with optional provenance."""
         with self._connection.transaction():
             self._connection.execute("SET TRANSACTION ISOLATION LEVEL SERIALIZABLE")
             rows = self._connection.execute(
                 """
-                SELECT id::text, name, url, use_basis, permitted_fields,
-                       access_policy, status
-                FROM app_private.source_catalog
-                WHERE name = %s AND url = %s
+                SELECT source.id::text, source.name, source.url, source.use_basis,
+                       source.permitted_fields, source.access_policy, source.status,
+                       source.dataset_page, source.source_updated_at,
+                       source.pilot_group_record_limit,
+                       COALESCE((
+                         SELECT count(*)
+                         FROM app_private.source_records AS records
+                         JOIN app_private.source_catalog AS grouped_source
+                           ON grouped_source.id = records.source_id
+                         WHERE grouped_source.pilot_group = source.pilot_group
+                       ), 0)::integer
+                FROM app_private.source_catalog AS source
+                WHERE source.name = %s AND source.url = %s
                 LIMIT 2
                 """,
                 (descriptor.source_name, descriptor.catalog_url),
@@ -48,19 +85,74 @@ class PostgresRepository:
             registration = self._registration(rows[0]) if rows else None
             policy.authorize(registration, access_method=descriptor.access_method)
             assert registration is not None
-            run_row = self._connection.execute(
-                """
-                INSERT INTO app_private.import_runs (source_id, region_code, status)
-                SELECT id, %s, 'running'
-                FROM app_private.source_catalog
-                WHERE id = %s AND status = 'approved'
-                RETURNING id::text
-                """,
-                (region_code, registration.id),
-            ).fetchone()
+            if provenance is None:
+                run_row = self._connection.execute(
+                    """
+                    INSERT INTO app_private.import_runs (source_id, region_code, status)
+                    SELECT id, %s, 'running'
+                    FROM app_private.source_catalog
+                    WHERE id = %s AND status = 'approved'
+                    RETURNING id::text
+                    """,
+                    (region_code, registration.id),
+                ).fetchone()
+            else:
+                if registration.dataset_page is None:
+                    raise SourcePolicyError("approved file source is missing its dataset page")
+                run_row = self._connection.execute(
+                    """
+                    INSERT INTO app_private.import_runs (
+                      source_id, region_code, status, file_original_filename,
+                      file_sha256, file_size_bytes, file_obtained_at, file_dataset_page,
+                      file_source_updated_at, file_operator, file_acquisition_method
+                    )
+                    SELECT id, %s, 'running', %s, %s, %s, %s, dataset_page,
+                           source_updated_at, %s, %s
+                    FROM app_private.source_catalog
+                    WHERE id = %s AND status = 'approved'
+                    RETURNING id::text
+                    """,
+                    (
+                        region_code,
+                        provenance.original_filename,
+                        provenance.file_sha256,
+                        provenance.file_size_bytes,
+                        provenance.obtained_at,
+                        provenance.operator,
+                        provenance.acquisition_method,
+                        registration.id,
+                    ),
+                ).fetchone()
             if run_row is None:
                 raise SourcePolicyError("source approval changed before import run creation")
             return str(run_row[0]), registration
+
+    def inspect_source(self, descriptor: SourceDescriptor) -> SourceRegistration | None:
+        """Read current source approval and pilot capacity in a read-only transaction."""
+        with self._connection.transaction():
+            self._connection.execute("SET TRANSACTION READ ONLY")
+            rows = self._connection.execute(
+                """
+                SELECT source.id::text, source.name, source.url, source.use_basis,
+                       source.permitted_fields, source.access_policy, source.status,
+                       source.dataset_page, source.source_updated_at,
+                       source.pilot_group_record_limit,
+                       COALESCE((
+                         SELECT count(*)
+                         FROM app_private.source_records AS records
+                         JOIN app_private.source_catalog AS grouped_source
+                           ON grouped_source.id = records.source_id
+                         WHERE grouped_source.pilot_group = source.pilot_group
+                       ), 0)::integer
+                FROM app_private.source_catalog AS source
+                WHERE source.name = %s AND source.url = %s
+                LIMIT 2
+                """,
+                (descriptor.source_name, descriptor.catalog_url),
+            ).fetchall()
+            if len(rows) > 1:
+                raise SourcePolicyError("source registration is ambiguous")
+            return self._registration(rows[0]) if rows else None
 
     @staticmethod
     def _registration(row: tuple[Any, ...]) -> SourceRegistration:
@@ -72,6 +164,10 @@ class PostgresRepository:
             permitted_fields=frozenset(row[4]),
             access_policy=row[5],
             status=str(row[6]),
+            dataset_page=row[7],
+            source_updated_at=row[8],
+            pilot_group_record_limit=row[9],
+            pilot_group_record_count=int(row[10]),
         )
 
     def snapshot_exists(self, source_id: str, record: RawRecord, content_hash: str) -> bool:

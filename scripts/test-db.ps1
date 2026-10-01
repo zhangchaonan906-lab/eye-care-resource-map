@@ -35,6 +35,8 @@ try {
   if ($LASTEXITCODE -ne 0) { throw 'P4 geocoding migration failed.' }
   docker compose -p $projectName exec -T db psql -U eye -d eye -v ON_ERROR_STOP=1 -f /workspace/db/migrations/007_source_open_data_rights.sql
   if ($LASTEXITCODE -ne 0) { throw 'P5 source rights migration failed.' }
+  docker compose -p $projectName exec -T db psql -U eye -d eye -v ON_ERROR_STOP=1 -f /workspace/db/migrations/008_source_file_provenance.sql
+  if ($LASTEXITCODE -ne 0) { throw 'P5 source file provenance migration failed.' }
   docker compose -p $projectName exec -T db psql -U eye -d eye -f /workspace/scripts/seed-opendata-sources.sql
   if ($LASTEXITCODE -ne 0) { throw 'Could not seed the qualified official open-data sources.' }
   $testFiles = @(

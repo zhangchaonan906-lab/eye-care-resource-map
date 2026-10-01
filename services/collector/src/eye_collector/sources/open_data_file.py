@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import csv
+import hashlib
 from collections.abc import Callable, Iterator, Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -12,6 +13,141 @@ from eye_collector.sources.base import SourceAdapter
 
 _MAX_FILE_BYTES = 10 * 1024 * 1024
 _MAX_RECORDS_PER_RUN = 150
+
+
+@dataclass(frozen=True, slots=True)
+class OpenDataFileInspection:
+    original_filename: str
+    file_sha256: str
+    file_size_bytes: int
+    detected_format: str
+    headers: tuple[str, ...]
+    row_count: int
+    expected_schema: tuple[str, ...]
+    schema_match: bool
+
+
+def inspect_open_data_file(path: str | Path, dataset: OpenDataDataset) -> OpenDataFileInspection:
+    """Read-only file preflight; hashes raw bytes and checks the full tabular schema."""
+    source_path = Path(path)
+    if not source_path.is_file():
+        raise ValueError("source file does not exist")
+    before = source_path.stat()
+    if before.st_size > _MAX_FILE_BYTES:
+        raise ValueError("source file size exceeds the 10 MiB limit")
+    if before.st_size == 0:
+        raise ValueError("source file is empty")
+    original_sha256 = sha256_file(source_path)
+
+    suffix = source_path.suffix.lower()
+    with source_path.open("rb") as stream:
+        signature = stream.read(8)
+    if suffix == ".xlsx" and signature.startswith(b"PK\x03\x04"):
+        detected_format = "xlsx"
+    elif suffix == ".xls" and signature.startswith(bytes.fromhex("D0CF11E0A1B11AE1")):
+        detected_format = "xls"
+    elif suffix == ".csv" and not signature.startswith(
+        (b"PK\x03\x04", bytes.fromhex("D0CF11E0A1B11AE1"))
+    ):
+        detected_format = "csv"
+    else:
+        raise ValueError("file extension and detected format do not match")
+
+    if detected_format == "csv":
+        headers, row_count, widths_match = _inspect_csv(source_path)
+    elif detected_format == "xlsx":
+        headers, row_count, widths_match = _inspect_xlsx(source_path)
+    else:
+        headers, row_count, widths_match = _inspect_xls(source_path)
+
+    after = source_path.stat()
+    if (
+        before.st_size != after.st_size
+        or before.st_mtime_ns != after.st_mtime_ns
+        or original_sha256 != sha256_file(source_path)
+    ):
+        raise ValueError("source file changed while it was being inspected")
+    header_set_matches = len(headers) == len(set(headers)) and set(headers) == set(
+        dataset.expected_headers
+    )
+    return OpenDataFileInspection(
+        original_filename=source_path.name,
+        file_sha256=original_sha256,
+        file_size_bytes=before.st_size,
+        detected_format=detected_format,
+        headers=headers,
+        row_count=row_count,
+        expected_schema=dataset.expected_headers,
+        schema_match=header_set_matches and widths_match,
+    )
+
+
+def sha256_file(path: str | Path) -> str:
+    digest = hashlib.sha256()
+    with Path(path).open("rb") as stream:
+        for chunk in iter(lambda: stream.read(64 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _inspect_csv(path: Path) -> tuple[tuple[str, ...], int, bool]:
+    with path.open("r", encoding="utf-8-sig", newline="") as stream:
+        reader = csv.reader(stream)
+        raw_headers = next(reader, None)
+        if raw_headers is None:
+            raise ValueError("source file header schema is missing")
+        headers = tuple(raw_headers)
+        row_count = 0
+        widths_match = True
+        for row in reader:
+            if not row or all(value == "" for value in row):
+                continue
+            row_count += 1
+            if len(row) != len(headers):
+                widths_match = False
+    return headers, row_count, widths_match
+
+
+def _inspect_xlsx(path: Path) -> tuple[tuple[str, ...], int, bool]:
+    from openpyxl import load_workbook  # type: ignore[import-untyped]
+
+    workbook = load_workbook(path, read_only=True, data_only=True)
+    try:
+        row_iter = workbook.active.iter_rows(values_only=True)
+        raw_headers = next(row_iter, None)
+        if raw_headers is None:
+            raise ValueError("source file header schema is missing")
+        headers = tuple("" if value is None else str(value) for value in raw_headers)
+        row_count = 0
+        widths_match = True
+        for row in row_iter:
+            if all(value is None or value == "" for value in row):
+                continue
+            row_count += 1
+            if len(row) != len(headers):
+                widths_match = False
+        return headers, row_count, widths_match
+    finally:
+        workbook.close()
+
+
+def _inspect_xls(path: Path) -> tuple[tuple[str, ...], int, bool]:
+    import xlrd  # type: ignore[import-untyped]
+
+    workbook = xlrd.open_workbook(path, on_demand=True)
+    try:
+        sheet = workbook.sheet_by_index(0)
+        if sheet.nrows == 0:
+            raise ValueError("source file header schema is missing")
+        headers = tuple(str(value) for value in sheet.row_values(0))
+        row_count = 0
+        for row_index in range(1, sheet.nrows):
+            values = sheet.row_values(row_index)
+            if any(value is not None and value != "" for value in values):
+                row_count += 1
+        return headers, row_count, True
+    finally:
+        workbook.release_resources()
 
 
 @dataclass(frozen=True, slots=True)
@@ -112,6 +248,9 @@ class OpenDataFileAdapter(SourceAdapter):
             raise ValueError("source file does not exist")
         if self._path.stat().st_size > _MAX_FILE_BYTES:
             raise ValueError("source file size exceeds the 10 MiB limit")
+        self.original_filename = self._path.name
+        self.file_size_bytes = self._path.stat().st_size
+        self.file_sha256 = sha256_file(self._path)
 
     @property
     def descriptor(self) -> SourceDescriptor:
@@ -149,6 +288,7 @@ class OpenDataFileAdapter(SourceAdapter):
         yield SourcePage(self._read_records(limit), None)
 
     def _read_records(self, limit: int) -> tuple[RawRecord, ...]:
+        self._assert_fingerprint_unchanged()
         suffix = self._path.suffix.lower()
         if suffix == ".csv":
             rows = self._read_csv(limit)
@@ -180,7 +320,15 @@ class OpenDataFileAdapter(SourceAdapter):
             records.append(RawRecord(source_key, self._dataset.dataset_url, payload))
             if len(records) >= limit:
                 break
+        self._assert_fingerprint_unchanged()
         return tuple(records)
+
+    def _assert_fingerprint_unchanged(self) -> None:
+        if (
+            self._path.stat().st_size != self.file_size_bytes
+            or sha256_file(self._path) != self.file_sha256
+        ):
+            raise ValueError("source file changed after fingerprint capture")
 
     def _read_csv(self, limit: int) -> list[dict[str, object]]:
         with self._path.open("r", encoding="utf-8-sig", newline="") as stream:
@@ -198,7 +346,7 @@ class OpenDataFileAdapter(SourceAdapter):
             return rows
 
     def _read_xlsx(self, limit: int) -> list[dict[str, object]]:
-        from openpyxl import load_workbook  # type: ignore[import-untyped]
+        from openpyxl import load_workbook
 
         workbook = load_workbook(self._path, read_only=True, data_only=True)
         try:
@@ -218,7 +366,7 @@ class OpenDataFileAdapter(SourceAdapter):
             workbook.close()
 
     def _read_xls(self, limit: int) -> list[dict[str, object]]:
-        import xlrd  # type: ignore[import-untyped]
+        import xlrd
 
         workbook = xlrd.open_workbook(self._path, on_demand=True)
         try:

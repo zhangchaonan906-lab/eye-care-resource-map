@@ -37,7 +37,7 @@ class FakeConnection:
 
     def execute(self, query: str, params: tuple[Any, ...] | None = None) -> FakeCursor:
         self.statements.append((query, params))
-        if "SET TRANSACTION ISOLATION LEVEL" in query:
+        if "SET TRANSACTION" in query:
             return FakeCursor([])
         return FakeCursor(self.responses.pop(0))
 
@@ -56,6 +56,10 @@ def source_row(status: str = "approved") -> tuple[Any, ...]:
         ["name", "address"],
         "automated_access_allowed",
         status,
+        None,
+        None,
+        None,
+        0,
     )
 
 
@@ -70,8 +74,7 @@ def test_pending_source_is_rejected_before_import_run_insert(
 
     assert len(connection.statements) == 2
     assert all(
-        "INSERT INTO app_private.import_runs" not in query
-        for query, _ in connection.statements
+        "INSERT INTO app_private.import_runs" not in query for query, _ in connection.statements
     )
 
 
@@ -118,7 +121,7 @@ def test_ambiguous_source_is_rejected_before_import_run_insert(
 
 
 def test_snapshot_insert_uses_conflict_key_and_returns_inserted_state() -> None:
-    connection = FakeConnection([[('new-snapshot-id',)]])
+    connection = FakeConnection([[("new-snapshot-id",)]])
     repository = PostgresRepository(connection)  # type: ignore[arg-type]
     record = RawRecord("facility-1", "https://fixture.invalid/1", {"name": "Fixture"})
 

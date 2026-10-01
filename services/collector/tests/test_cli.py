@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import csv
 import json
+from datetime import date
 from pathlib import Path
 
 import pytest
@@ -38,11 +39,31 @@ class FakeRepository:
         self.records: set[tuple[str, str]] = set()
         self.inserted = 0
         self.final_status: str | None = None
+        self.started = 0
+        self.inspection_reads = 0
+
+    def inspect_source(self, descriptor: SourceDescriptor) -> SourceRegistration | None:
+        self.inspection_reads += 1
+        if self.registration.name == descriptor.source_name:
+            return self.registration
+        return None
 
     def start_approved_run(
         self, descriptor: SourceDescriptor, region_code: str, policy: SourcePolicy
     ) -> tuple[str, SourceRegistration]:
         policy.authorize(self.registration, access_method=descriptor.access_method)
+        self.started += 1
+        return "cli-run-id", self.registration
+
+    def start_approved_file_run(
+        self,
+        descriptor: SourceDescriptor,
+        region_code: str,
+        policy: SourcePolicy,
+        provenance: object,
+    ) -> tuple[str, SourceRegistration]:
+        policy.authorize(self.registration, access_method=descriptor.access_method)
+        self.started += 1
         return "cli-run-id", self.registration
 
     def snapshot_exists(self, source_id: str, record: RawRecord, content_hash: str) -> bool:
@@ -136,6 +157,8 @@ def test_official_file_cli_uses_catalog_policy_and_existing_import_lifecycle(
         "approved",
     )
     monkeypatch.setenv("PILOT_REAL_DATA", "true")
+    monkeypatch.setenv("PILOT_OPERATOR", "test-operator")
+    monkeypatch.setenv("PILOT_FILE_OBTAINED_AT", "2026-10-01T10:00:00+08:00")
     monkeypatch.setenv("DATABASE_URL", "postgresql://eye_collector:test@localhost/eye")
     monkeypatch.setattr("eye_collector.cli.PostgresRepository.connect", lambda _url: repository)
 
@@ -159,6 +182,51 @@ def test_official_file_cli_uses_catalog_policy_and_existing_import_lifecycle(
     assert result["status"] == "succeeded"
     assert result["dry_run"] is True
     assert result["counts"]["inserted"] == 1
+    assert repository.inserted == 0
+
+
+def test_inspect_file_reports_readiness_without_starting_an_import_run(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], tmp_path: Path
+) -> None:
+    dataset = BEIJING_DESIGNATED_MEDICAL_INSTITUTIONS
+    source_file = tmp_path / "official.csv"
+    with source_file.open("w", newline="", encoding="utf-8-sig") as stream:
+        writer = csv.writer(stream)
+        writer.writerow(dataset.expected_headers)
+        writer.writerow(["测试医院", "地址", "三级", "综合", "东城区", "12345"])
+    repository = FakeRepository()
+    repository.registration = SourceRegistration(
+        "source-id",
+        dataset.source_name,
+        dataset.dataset_url,
+        "official platform dataset",
+        frozenset({"source_fields", "name", "address", "administrative_context"}),
+        "manual_only",
+        "approved",
+        dataset_page=dataset.dataset_url,
+        source_updated_at=date(2026, 8, 13),
+        pilot_group_record_limit=300,
+        pilot_group_record_count=0,
+    )
+    monkeypatch.setenv("DATABASE_URL", "postgresql://eye_collector:test@localhost/eye")
+    monkeypatch.setattr("eye_collector.cli.PostgresRepository.connect", lambda _url: repository)
+
+    exit_code = main(["inspect-file", "--source", dataset.source_key, "--file", str(source_file)])
+
+    result = json.loads(capsys.readouterr().out)
+    assert exit_code == 0
+    assert result["filename"] == "official.csv"
+    assert result["file_size_bytes"] == source_file.stat().st_size
+    assert result["detected_format"] == "csv"
+    assert result["headers"] == list(dataset.expected_headers)
+    assert result["row_count"] == 1
+    assert result["approved_dataset"] == dataset.source_name
+    assert result["schema_match"] is True
+    assert result["configured_pilot_limit"] == 300
+    assert result["allowed_region"] == "110000"
+    assert result["ready_to_import"] is True
+    assert repository.inspection_reads == 1
+    assert repository.started == 0
     assert repository.inserted == 0
 
 
