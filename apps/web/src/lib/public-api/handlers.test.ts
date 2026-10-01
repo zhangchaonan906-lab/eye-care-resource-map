@@ -22,6 +22,7 @@ function repository(overrides: Partial<PublicFacilityRepository> = {}): PublicFa
     list: vi.fn().mockResolvedValue({ items: [], nextCursor: null }),
     getById: vi.fn().mockResolvedValue(null),
     search: vi.fn().mockResolvedValue({ items: [], nextCursor: null }),
+    countPublished: vi.fn().mockResolvedValue(0),
     ...overrides,
   };
 }
@@ -143,12 +144,14 @@ describe("search and categories", () => {
   it("returns all five supported categories", async () => {
     const response = await categoriesHandler();
     expect(response.status).toBe(200);
-    expect((await response.json()).data.map((item: { id: string }) => item.id)).toEqual([
+    const body = await response.json();
+    expect(body.data.map((item: { id: string }) => item.id)).toEqual([
       "eye_specialty_hospital",
       "general_hospital_ophthalmology",
       "ophthalmology_center",
       "eye_clinic",
       "unknown",
     ]);
+    expect(body.meta).toMatchObject({ publishedFacilityCount: 0 });
   });
 });

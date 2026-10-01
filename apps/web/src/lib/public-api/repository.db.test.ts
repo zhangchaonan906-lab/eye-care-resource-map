@@ -141,6 +141,7 @@ describe("PostGIS public facility repository", () => {
   });
 
   it("supports detail lookup and exact/prefix normalized-name search", async () => {
+    expect(await repository.countPublished()).toBeGreaterThanOrEqual(4);
     expect((await repository.getById(ids.facilities[0]))?.name).toBe("测试眼科医院A");
     expect(await repository.getById("00000000-0000-4000-8000-000000000299")).toBeNull();
     expect((await repository.search({ q: "测试眼科医院A", match: "exact", limit: 20 })).items).toHaveLength(1);

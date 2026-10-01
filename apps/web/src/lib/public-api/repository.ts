@@ -64,6 +64,11 @@ export class PostgresPublicFacilityRepository implements PublicFacilityRepositor
     return result.rows[0] ? mapFacility(result.rows[0]) : null;
   }
 
+  async countPublished(): Promise<number> {
+    const result = await this.pool.query<{ count: number }>("SELECT count(*)::integer AS count FROM public.published_facility_api");
+    return Number(result.rows[0]?.count ?? 0);
+  }
+
   async search(input: SearchInput): Promise<Page<PublicFacility>> {
     const values: unknown[] = [input.q];
     const clauses = [input.match === "exact" ? "normalized_name = $1" : "left(normalized_name, char_length($1)) = $1"];
