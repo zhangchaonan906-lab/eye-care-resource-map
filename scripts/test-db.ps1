@@ -14,17 +14,28 @@ Push-Location $repoRoot
 try {
   docker compose -p $projectName up -d --wait
   if ($LASTEXITCODE -ne 0) { throw 'Docker database did not become healthy.' }
-  $sqlFiles = @(
+  $migrationFiles = @(
     '/workspace/db/migrations/001_core.sql',
     '/workspace/db/migrations/002_evidence_location.sql',
     '/workspace/db/migrations/003_published_view.sql',
-    '/workspace/db/migrations/004_collector_permissions.sql',
+    '/workspace/db/migrations/004_collector_permissions.sql'
+  )
+  foreach ($sqlFile in $migrationFiles) {
+    docker compose -p $projectName exec -T db psql -h 127.0.0.1 -U eye -d eye -v ON_ERROR_STOP=1 -f $sqlFile
+    if ($LASTEXITCODE -ne 0) { throw "SQL failed: $sqlFile" }
+  }
+  docker compose -p $projectName exec -T db psql -h 127.0.0.1 -U eye -d eye -v ON_ERROR_STOP=1 -f /workspace/db/tests/004_legacy_source_policy_fixture.sql
+  if ($LASTEXITCODE -ne 0) { throw 'Could not seed legacy source policy migration fixtures.' }
+  docker compose -p $projectName exec -T db psql -h 127.0.0.1 -U eye -d eye -v ON_ERROR_STOP=1 -f /workspace/db/migrations/005_etl_candidates.sql
+  if ($LASTEXITCODE -ne 0) { throw 'P3 ETL migration failed.' }
+  $testFiles = @(
     '/workspace/db/tests/001_core.sql',
     '/workspace/db/tests/002_evidence_location.sql',
     '/workspace/db/tests/003_published_view.sql',
-    '/workspace/db/tests/004_collector_permissions.sql'
+    '/workspace/db/tests/004_collector_permissions.sql',
+    '/workspace/db/tests/005_etl_candidates.sql'
   )
-  foreach ($sqlFile in $sqlFiles) {
+  foreach ($sqlFile in $testFiles) {
     docker compose -p $projectName exec -T db psql -U eye -d eye -v ON_ERROR_STOP=1 -f $sqlFile
     if ($LASTEXITCODE -ne 0) { throw "SQL failed: $sqlFile" }
   }

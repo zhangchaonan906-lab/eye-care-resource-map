@@ -29,11 +29,20 @@ for sql_file in \
   /workspace/db/migrations/001_core.sql \
   /workspace/db/migrations/002_evidence_location.sql \
   /workspace/db/migrations/003_published_view.sql \
-  /workspace/db/migrations/004_collector_permissions.sql \
+  /workspace/db/migrations/004_collector_permissions.sql; do
+  compose exec -T db psql -h 127.0.0.1 -U eye -d eye -v ON_ERROR_STOP=1 -f "$sql_file"
+done
+compose exec -T db psql -h 127.0.0.1 -U eye -d eye -v ON_ERROR_STOP=1 \
+  -f /workspace/db/tests/004_legacy_source_policy_fixture.sql
+compose exec -T db psql -h 127.0.0.1 -U eye -d eye -v ON_ERROR_STOP=1 \
+  -f /workspace/db/migrations/005_etl_candidates.sql
+
+for sql_file in \
   /workspace/db/tests/001_core.sql \
   /workspace/db/tests/002_evidence_location.sql \
   /workspace/db/tests/003_published_view.sql \
-  /workspace/db/tests/004_collector_permissions.sql; do
+  /workspace/db/tests/004_collector_permissions.sql \
+  /workspace/db/tests/005_etl_candidates.sql; do
   compose exec -T db psql -h 127.0.0.1 -U eye -d eye -v ON_ERROR_STOP=1 -f "$sql_file"
 done
 compose exec -T db psql -h 127.0.0.1 -U eye -d eye -v ON_ERROR_STOP=1 \
