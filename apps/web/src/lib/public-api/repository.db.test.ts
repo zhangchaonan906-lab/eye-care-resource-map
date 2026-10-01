@@ -79,9 +79,9 @@ beforeAll(async () => {
     );
     await client.query(
       `INSERT INTO app_private.source_catalog
-       (id, name, url, dataset_page, use_basis, status, app_display_allowed)
+       (id, name, url, dataset_page, use_basis, status, data_use_allowed, reuse_allowed, app_display_allowed, permitted_fields, retention_restrictions)
        VALUES ($1, '合成 API 来源', 'https://example.org/source', 'https://example.org/dataset',
-               '本地集成测试', 'approved', true)`,
+               '本地集成测试', 'approved', true, true, true, ARRAY['name','address','specialties','coordinates'], 'unrestricted')`,
       [ids.source],
     );
     await client.query(
@@ -114,7 +114,8 @@ beforeAll(async () => {
         `INSERT INTO app_private.facility_evidence (facility_id, source_record_id, field_name, field_value, confidence)
          VALUES ($1, $2, 'ophthalmology_status', '"verified"'::jsonb, 1),
                 ($1, $2, 'name', to_jsonb($3::text), 1),
-                ($1, $2, 'address', to_jsonb($4::text), 1)`,
+                ($1, $2, 'address', to_jsonb($4::text), 1),
+                ($1, $2, 'specialties', '"眼科"'::jsonb, 1)`,
         [ids.facilities[i], ids.records[i], sample.name, `测试地址${i}`],
       );
     }

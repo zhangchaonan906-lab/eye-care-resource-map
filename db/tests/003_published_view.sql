@@ -3,8 +3,8 @@ BEGIN;
 SET LOCAL search_path = app_private, public, extensions;
 INSERT INTO app_private.regions (id, adcode, name, level, version)
 VALUES ('00000000-0000-0000-0000-000000000021', '110000', '北京市', 'province', '2026');
-INSERT INTO app_private.source_catalog (id, name, url, use_basis, status)
-VALUES ('00000000-0000-0000-0000-000000000022', '已准入来源', 'https://example.org/source', '测试许可', 'approved');
+INSERT INTO app_private.source_catalog (id, name, url, use_basis, status, data_use_allowed, reuse_allowed, app_display_allowed, permitted_fields, retention_restrictions)
+VALUES ('00000000-0000-0000-0000-000000000022', '已准入来源', 'https://example.org/source', '测试许可', 'approved', true, true, true, ARRAY['name','address','specialties','coordinates'], 'unrestricted');
 INSERT INTO app_private.import_runs (id, source_id, region_code, status, ended_at)
 VALUES ('00000000-0000-0000-0000-000000000023',
   '00000000-0000-0000-0000-000000000022', '110000', 'succeeded', now());
@@ -44,7 +44,10 @@ VALUES
    '"可见医院"'::jsonb, 1.0),
   ('00000000-0000-0000-0000-000000000025',
    '00000000-0000-0000-0000-000000000024', 'address',
-   '"北京市测试路1号"'::jsonb, 1.0);
+   '"北京市测试路1号"'::jsonb, 1.0),
+  ('00000000-0000-0000-0000-000000000025',
+   '00000000-0000-0000-0000-000000000024', 'specialties',
+   '"眼科"'::jsonb, 1.0);
 DO $$
 BEGIN
   IF (SELECT count(*) FROM public.published_facilities
