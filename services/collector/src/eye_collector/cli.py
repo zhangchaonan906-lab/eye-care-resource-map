@@ -22,6 +22,22 @@ from eye_collector.logging_utils import JsonLogFormatter, safe_error_summary
 from eye_collector.models import ImportResult
 from eye_collector.runner import CollectorRunner
 from eye_collector.sources.fixture import FixtureSourceAdapter, FixtureTransport
+from eye_collector.sources.open_data_file import (
+    BEIJING_DESIGNATED_MEDICAL_INSTITUTIONS,
+    BEIJING_HOSPITALS,
+    SHENZHEN_BAOAN_HOSPITALS,
+    OpenDataDataset,
+    OpenDataFileAdapter,
+)
+
+_OPEN_DATA_DATASETS: dict[str, tuple[OpenDataDataset, str]] = {
+    dataset.source_key: (dataset, region)
+    for dataset, region in (
+        (BEIJING_HOSPITALS, "110000"),
+        (BEIJING_DESIGNATED_MEDICAL_INSTITUTIONS, "110000"),
+        (SHENZHEN_BAOAN_HOSPITALS, "440306"),
+    )
+}
 
 
 def _region_code(value: str) -> str:
@@ -51,8 +67,11 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="eye-collector")
     commands = parser.add_subparsers(dest="command", required=True)
     run = commands.add_parser("run", help="run one approved source import")
-    run.add_argument("--source", required=True, choices=("fixture",))
+    run.add_argument(
+        "--source", required=True, choices=("fixture", *_OPEN_DATA_DATASETS.keys())
+    )
     run.add_argument("--region", required=True, type=_region_code)
+    run.add_argument("--file", help="operator-downloaded official CSV, XLS, or XLSX file")
     run.add_argument("--limit", type=_positive_int)
     run.add_argument("--dry-run", action="store_true")
     run.add_argument("--fixture-revision", choices=("stable", "updated"), default="stable")
@@ -70,8 +89,9 @@ def build_parser() -> argparse.ArgumentParser:
     pilot = commands.add_parser(
         "pilot", help="run an explicitly bounded and approved regional pilot"
     )
-    pilot.add_argument("--source", required=True)
-    pilot.add_argument("--region", required=True, choices=("110000", "440000"))
+    pilot.add_argument("--source", required=True, choices=tuple(_OPEN_DATA_DATASETS))
+    pilot.add_argument("--region", required=True, choices=("110000", "440306"))
+    pilot.add_argument("--file", required=True, help="operator-downloaded official source file")
     pilot.add_argument("--limit", required=True, type=_positive_int)
     pilot.add_argument("--dry-run", action="store_true")
     return parser
@@ -110,9 +130,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         if args.command == "pilot":
             if os.environ.get("PILOT_REAL_DATA") != "true":
                 raise ValueError("pilot requires explicit PILOT_REAL_DATA=true opt-in")
-            raise ValueError(
-                "P5-A source approval is incomplete; no real pilot adapter is enabled"
-            )
+            args.command = "run"
         if args.command == "geocode":
             geocode_config = GeocodingConfig.from_env()
             geocode_repository = GeocodeRepository.connect(geocode_config.database_url)
@@ -151,9 +169,29 @@ def main(argv: Sequence[str] | None = None) -> int:
             stats = Pipeline(etl_repository).run(limit=args.limit)
             print(json.dumps(stats.as_dict(), ensure_ascii=False, separators=(",", ":")))
             return 0 if stats.errors == 0 else 1
-        config = CollectorConfig.from_env()
         if args.source != "fixture":
-            raise ValueError("only the offline fixture source is available in P2")
+            if args.file is None:
+                raise ValueError("official dataset imports require --file")
+            if args.limit is None:
+                raise ValueError("official dataset imports require an explicit --limit")
+            if os.environ.get("PILOT_REAL_DATA") != "true":
+                raise ValueError("official dataset imports require PILOT_REAL_DATA=true opt-in")
+            dataset, required_region = _OPEN_DATA_DATASETS[args.source]
+            if args.region != required_region:
+                raise ValueError("region does not match the approved dataset scope")
+            config = CollectorConfig.from_env()
+            file_adapter = OpenDataFileAdapter(args.file, dataset)
+            repository = PostgresRepository.connect(config.database_url)
+            result = CollectorRunner(repository, file_adapter).run(
+                cast(str, args.region),
+                limit=args.limit,
+                dry_run=args.dry_run,
+            )
+            print(_result_json(result))
+            return 0 if result.status == "succeeded" else 1
+        if args.file is not None:
+            raise ValueError("--file is only valid for an approved official dataset source")
+        config = CollectorConfig.from_env()
         http = HttpClient(
             timeout_seconds=config.http_timeout_seconds,
             max_response_bytes=config.http_max_response_bytes,
@@ -162,9 +200,9 @@ def main(argv: Sequence[str] | None = None) -> int:
             user_agent=config.http_user_agent,
             transport=FixtureTransport(revision=args.fixture_revision),
         )
-        adapter = FixtureSourceAdapter(http, revision=args.fixture_revision)
+        fixture_adapter = FixtureSourceAdapter(http, revision=args.fixture_revision)
         repository = PostgresRepository.connect(config.database_url)
-        result = CollectorRunner(repository, adapter).run(
+        result = CollectorRunner(repository, fixture_adapter).run(
             cast(str, args.region),
             limit=args.limit,
             dry_run=args.dry_run,

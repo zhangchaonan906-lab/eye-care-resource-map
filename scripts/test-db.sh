@@ -2,7 +2,7 @@
 set -Eeuo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-project_name="eye-p4-check-$(python3 -c 'import secrets; print(secrets.token_hex(4))')"
+project_name="eye-p5-check-$(python3 -c 'import secrets; print(secrets.token_hex(4))')"
 if [[ -z "${EYE_MAP_POSTGRES_PASSWORD:-}" ]]; then
   export EYE_MAP_POSTGRES_PASSWORD="$(python3 -c 'import secrets; print(secrets.token_hex(32))')"
 fi
@@ -43,6 +43,10 @@ compose exec -T db psql -h 127.0.0.1 -U eye -d eye -v ON_ERROR_STOP=1 \
   -f /workspace/db/migrations/005_etl_candidates.sql
 compose exec -T db psql -h 127.0.0.1 -U eye -d eye -v ON_ERROR_STOP=1 \
   -f /workspace/db/migrations/006_geocoding.sql
+compose exec -T db psql -h 127.0.0.1 -U eye -d eye -v ON_ERROR_STOP=1 \
+  -f /workspace/db/migrations/007_source_open_data_rights.sql
+compose exec -T db psql -h 127.0.0.1 -U eye -d eye -v ON_ERROR_STOP=1 \
+  -f /workspace/scripts/seed-opendata-sources.sql
 
 for sql_file in \
   /workspace/db/tests/001_core.sql \
@@ -50,7 +54,8 @@ for sql_file in \
   /workspace/db/tests/003_published_view.sql \
   /workspace/db/tests/004_collector_permissions.sql \
   /workspace/db/tests/005_etl_candidates.sql \
-  /workspace/db/tests/006_geocoding.sql; do
+  /workspace/db/tests/006_geocoding.sql \
+  /workspace/db/tests/007_source_open_data_rights.sql; do
   compose exec -T db psql -h 127.0.0.1 -U eye -d eye -v ON_ERROR_STOP=1 -f "$sql_file"
 done
 compose exec -T db psql -h 127.0.0.1 -U eye -d eye -v ON_ERROR_STOP=1 \

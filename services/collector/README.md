@@ -1,6 +1,6 @@
 # Eye Care Source Collector
 
-P2 collector 提供受来源审批门控的采集框架。当前唯一 adapter 是使用内置合成 JSON 的 Fixture；它使用 HTTPX mock transport，所有请求都留在本地，不访问公网，也不包含生产医院数据。
+P2 collector 提供受来源审批门控的采集框架。当前包括离线合成 Fixture adapter，以及 P5 的官方数据本地文件 adapter。Fixture 使用 HTTPX mock transport，不访问公网；文件 adapter 只读取操作员从官方门户合法取得的本地 CSV/XLS/XLSX，不登录门户、不抓网页、不下载数据，也不包含生产医院数据。
 
 ## 安装
 
@@ -21,7 +21,7 @@ Linux/macOS 激活方式为 `source .venv/bin/activate`。
 
 `DATABASE_URL` 应使用单独登录角色，该登录角色只继承数据库角色 `eye_collector`。migration `004_collector_permissions.sql` 只授予读取来源登记、有限读写 `import_runs`、写入/读取 `source_records` 的权限。collector 不能写 `facilities`、`candidate_records`、证据、位置、重复案件或发布视图。
 
-运行完整数据库检查（临时启动 PostGIS、应用 P1–P4 migrations、运行 SQL tests、创建临时最小权限登录、运行数据库集成测试并清理 volume）：
+运行完整数据库检查（临时启动 PostGIS、应用 P1–P5 migrations、运行 SQL tests、创建临时最小权限登录、运行数据库集成测试并清理 volume）：
 
 ```powershell
 pwsh -NoProfile -File scripts/test-db.ps1
@@ -35,13 +35,14 @@ Linux CI 等价入口是仓库根目录的 `scripts/test-db.sh`。两个脚本�
 $env:EYE_MAP_POSTGRES_PASSWORD = [Convert]::ToHexString([Security.Cryptography.RandomNumberGenerator]::GetBytes(32))
 $env:EYE_MAP_DB_PORT = "55432"
 docker compose up -d --wait
-foreach ($migration in @('001_core.sql', '002_evidence_location.sql', '003_published_view.sql', '004_collector_permissions.sql', '005_etl_candidates.sql', '006_geocoding.sql')) {
+foreach ($migration in @('001_core.sql', '002_evidence_location.sql', '003_published_view.sql', '004_collector_permissions.sql', '005_etl_candidates.sql', '006_geocoding.sql', '007_source_open_data_rights.sql')) {
   docker compose exec -T db psql -U eye -d eye -v ON_ERROR_STOP=1 -f "/workspace/db/migrations/$migration"
   if ($LASTEXITCODE -ne 0) { throw "Migration failed: $migration" }
 }
 $collectorPassword = [Convert]::ToHexString([Security.Cryptography.RandomNumberGenerator]::GetBytes(32))
 docker compose exec -T db psql -U eye -d eye -v "collector_password=$collectorPassword" -f /workspace/scripts/provision-collector-login.sql
 docker compose exec -T db psql -U eye -d eye -f /workspace/scripts/seed-fixture-source.sql
+docker compose exec -T db psql -U eye -d eye -f /workspace/scripts/seed-opendata-sources.sql
 $env:DATABASE_URL = "postgresql://eye_collector_runtime:$collectorPassword@127.0.0.1:55432/eye"
 $etlPassword = [Convert]::ToHexString([Security.Cryptography.RandomNumberGenerator]::GetBytes(32))
 docker compose exec -T db psql -U eye -d eye -v "etl_password=$etlPassword" -f /workspace/scripts/provision-etl-login.sql
@@ -52,6 +53,8 @@ $env:GEOCODE_DATABASE_URL = "postgresql://eye_geocode_runtime:$geocodePassword@1
 ```
 
 Fixture seed 仅创建合成来源及用于测试拒绝路径的 pending/suspended/blocked 登记。
+
+Open-data source seed 只写入来源审查元数据，不包含真实医院数据。北京“医院”和“定点医疗机构信息”及深圳宝安医院名录分别登记为 `manual_only`；该设置只允许从操作员合法下载的本地文件导入，不授予 HTTP 抓取权限。深圳来源的原始数据转让和再分发均被禁止；平台下架后需暂停来源并调用受限来源清除流程。见 [`docs/data-sources/pilot/README.md`](../../docs/data-sources/pilot/README.md)。
 
 P3 ETL 使用隔离的 `ETL_DATABASE_URL` 和 `eye_etl_runtime` 最小权限账号。先按 migration 005 升级数据库，并用 `scripts/provision-etl-login.sql` 创建登录；`scripts/test-db.ps1` 会演示完整合成数据测试流程。详见 [`docs/etl/README.md`](../../docs/etl/README.md)。
 
@@ -65,7 +68,7 @@ py -m eye_collector.cli run --source fixture --region 110000 --limit 5
 py -m eye_collector.cli run --source fixture --region 110000 --dry-run --limit 5
 ```
 
-CLI 必须能在 `source_catalog` 精确找到匹配的来源名称和目录 URL，且该来源 `status=approved`、有 `use_basis`、`permitted_fields` 非空，并且 `access_policy=automated_access_allowed`。拒绝发生在创建 `import_runs` 之前。
+CLI 必须能在 `source_catalog` 精确找到匹配的来源名称和目录 URL，且该来源 `status=approved`、有 `use_basis`、`permitted_fields` 非空。HTTP adapter 只接受 `access_policy=automated_access_allowed`；本地文件 adapter 只接受 `access_policy=manual_only`。拒绝发生在创建 `import_runs` 之前。
 
 Dry-run 仍会创建并结束 `import_runs`，用于记录审计与 requested/received 统计，但不会写 `source_records`。`counts.inserted` 是尚未写入时预计新增的快照数；已存在的内容计入 `unchanged`。`requested` 是请求页数，`received` 是页中返回的原始记录数。
 
@@ -98,6 +101,26 @@ py -m eye_collector.cli geocode --provider fixture --candidate-id 123e4567-e89b-
 Dry-run 会请求离线 fixture 并执行坐标、精度和 `regions.parent_id` 层级校验，但不写入结果。正式运行只写 `candidate_locations` staging，原始 provider 坐标系和转换后的 WGS84 坐标分别记录；未验证、低精度或区域不明的结果进入 review，坐标不进入 `facility_locations`。地址/结果使用 canonical SHA-256 指纹，provider/version 下已有结果的候选不会重复请求。
 
 WGS84 保持原值，GCJ-02 使用本地逆转换后转存 WGS84，UNKNOWN 系统不能成为 verified 坐标。已验证精度仅 rooftop/building，且要求中国范围、非 Null Island、行政区层级一致及 provider accuracy 0–100m。P4 没有真实 provider 授权、没有真实坐标记录、没有北京/广东试点或 facility 发布流程。
+
+## P5 官方开放数据文件导入
+
+数据文件必须由获授权的操作员在官方平台获取，并放在仓库之外。CLI 不登录平台、不下载文件、不存储账号密钥，也不抓取网页。
+
+```powershell
+$env:PILOT_REAL_DATA = "true"
+py -m eye_collector.cli pilot `
+  --source beijing-open-data-designated-medical-institutions `
+  --region 110000 `
+  --file C:\secure\official-export.csv `
+  --limit 100 `
+  --dry-run
+```
+
+可选来源为 `beijing-open-data-hospitals`、`beijing-open-data-designated-medical-institutions` 和 `shenzhen-open-data-baoan-hospital-basic-information`。深圳必须使用 `--region 440306`。文件适配器要求官方字段名精确匹配；额外、缺失或重复的表头会拒绝整个导入。CSV/XLS/XLSX 都支持，文件上限 10 MiB、每次导入上限 150 条，且数据库对本试点三项来源累计最多允许 300 条 source records。深圳原始数据不允许放入 GitHub、原始下载镜像、导出接口或转售。
+
+`OpenDataApiAdapter` 提供通用 JSON API 接口，要求显式配置响应 envelope、完整字段映射、稳定记录键、有界分页以及与数据集页面同源的 HTTPS endpoint；网络请求复用统一 HTTP client 的重试、速率限制、响应体上限和安全日志。它不会自行授予 API 权限，仍须通过现有 Source Approval Gate。当前审核的 P5 数据源都是 `manual_only`，所以 API adapter 尚未启用，也没有配置未经核验的接口或凭据。
+
+北京官方协议要求署名，并要求应用情况备案；深圳要求在成果中注明“深圳市政府数据开放平台”，并在数据被平台下架时停止保存和使用。前端尚未开发时，应把发布前完成署名和相关备案作为发布门禁。眼科状态只有在明确的诊疗科目/科室或 `specialties` 证据文本命中时才记录证据，否则保持 unknown。
 
 ## 测试、lint 与类型检查
 

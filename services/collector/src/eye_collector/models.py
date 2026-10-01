@@ -36,6 +36,7 @@ class SourceDescriptor:
     requests_per_second: float = 1.0
     min_delay_ms: int = 0
     max_concurrency: int = 1
+    access_method: str = "http"
 
 
 @dataclass(frozen=True, slots=True)

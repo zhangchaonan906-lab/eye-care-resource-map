@@ -11,7 +11,9 @@ from eye_collector.models import RawRecord, SourceRegistration
 class SourcePolicy:
     """Fail-closed authorization for source access and fields."""
 
-    def authorize(self, source: SourceRegistration | None) -> None:
+    def authorize(
+        self, source: SourceRegistration | None, *, access_method: str = "http"
+    ) -> None:
         if source is None:
             raise SourcePolicyError("source is not registered")
         if source.status != "approved":
@@ -20,13 +22,21 @@ class SourcePolicy:
             raise SourcePolicyError("source use_basis must be recorded")
         if not source.permitted_fields:
             raise SourcePolicyError("source permitted_fields must not be empty")
-        if source.access_policy != "automated_access_allowed":
-            raise SourcePolicyError("source access_policy does not allow automated access")
+        permitted = {
+            "http": "automated_access_allowed",
+            "file": "manual_only",
+        }.get(access_method)
+        if permitted is None or source.access_policy != permitted:
+            raise SourcePolicyError("source access method is not allowed by access_policy")
 
     def authorize_payload(
-        self, source: SourceRegistration, payload: Mapping[str, Any]
+        self,
+        source: SourceRegistration,
+        payload: Mapping[str, Any],
+        *,
+        access_method: str = "http",
     ) -> dict[str, Any]:
-        self.authorize(source)
+        self.authorize(source, access_method=access_method)
         unexpected = set(payload).difference(source.permitted_fields)
         if unexpected:
             fields = ", ".join(sorted(unexpected))
@@ -35,11 +45,13 @@ class SourcePolicy:
             raise SourcePolicyError("raw payload must be a JSON object")
         return payload
 
-    def authorize_record(self, source: SourceRegistration, record: RawRecord) -> RawRecord:
-        self.authorize(source)
+    def authorize_record(
+        self, source: SourceRegistration, record: RawRecord, *, access_method: str = "http"
+    ) -> RawRecord:
+        self.authorize(source, access_method=access_method)
         if self._https_origin(source.url) != self._https_origin(record.source_url):
             raise SourcePolicyError("record URL must use the approved source origin")
-        self.authorize_payload(source, record.raw_payload)
+        self.authorize_payload(source, record.raw_payload, access_method=access_method)
         return record
 
     @staticmethod

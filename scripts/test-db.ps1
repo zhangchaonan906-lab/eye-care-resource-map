@@ -1,6 +1,6 @@
 $ErrorActionPreference = 'Stop'
 $repoRoot = Split-Path -Parent $PSScriptRoot
-$projectName = 'eye-p4-check-' + [guid]::NewGuid().ToString('N').Substring(0, 8)
+$projectName = 'eye-p5-check-' + [guid]::NewGuid().ToString('N').Substring(0, 8)
 $previousPassword = [Environment]::GetEnvironmentVariable('EYE_MAP_POSTGRES_PASSWORD', 'Process')
 $previousPort = [Environment]::GetEnvironmentVariable('EYE_MAP_DB_PORT', 'Process')
 $previousDatabaseUrl = [Environment]::GetEnvironmentVariable('DATABASE_URL', 'Process')
@@ -33,13 +33,18 @@ try {
   if ($LASTEXITCODE -ne 0) { throw 'P3 ETL migration failed.' }
   docker compose -p $projectName exec -T db psql -U eye -d eye -v ON_ERROR_STOP=1 -f /workspace/db/migrations/006_geocoding.sql
   if ($LASTEXITCODE -ne 0) { throw 'P4 geocoding migration failed.' }
+  docker compose -p $projectName exec -T db psql -U eye -d eye -v ON_ERROR_STOP=1 -f /workspace/db/migrations/007_source_open_data_rights.sql
+  if ($LASTEXITCODE -ne 0) { throw 'P5 source rights migration failed.' }
+  docker compose -p $projectName exec -T db psql -U eye -d eye -f /workspace/scripts/seed-opendata-sources.sql
+  if ($LASTEXITCODE -ne 0) { throw 'Could not seed the qualified official open-data sources.' }
   $testFiles = @(
     '/workspace/db/tests/001_core.sql',
     '/workspace/db/tests/002_evidence_location.sql',
     '/workspace/db/tests/003_published_view.sql',
     '/workspace/db/tests/004_collector_permissions.sql',
     '/workspace/db/tests/005_etl_candidates.sql',
-    '/workspace/db/tests/006_geocoding.sql'
+    '/workspace/db/tests/006_geocoding.sql',
+    '/workspace/db/tests/007_source_open_data_rights.sql'
   )
   foreach ($sqlFile in $testFiles) {
     docker compose -p $projectName exec -T db psql -U eye -d eye -v ON_ERROR_STOP=1 -f $sqlFile
@@ -122,4 +127,4 @@ finally {
     }
   }
 }
-Write-Host 'P1/P2/P3/P4 database checks passed.'
+Write-Host 'P1/P2/P3/P4/P5 database checks passed.'

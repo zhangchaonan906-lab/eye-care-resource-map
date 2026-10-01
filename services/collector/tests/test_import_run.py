@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import csv
 from dataclasses import replace
+from pathlib import Path
 
 import pytest
 
@@ -16,6 +18,7 @@ from eye_collector.models import (
 from eye_collector.policy import SourcePolicy
 from eye_collector.runner import CollectorRunner
 from eye_collector.sources.base import SourceAdapter
+from eye_collector.sources.open_data_file import BEIJING_HOSPITALS, OpenDataFileAdapter
 
 
 @pytest.fixture
@@ -56,7 +59,7 @@ class MemoryRepository:
     def start_approved_run(
         self, descriptor: SourceDescriptor, region_code: str, policy: SourcePolicy
     ) -> tuple[str, SourceRegistration]:
-        policy.authorize(self.registration)
+        policy.authorize(self.registration, access_method=descriptor.access_method)
         self.started += 1
         return "run-id", self.registration
 
@@ -205,3 +208,33 @@ def test_dry_run_recognizes_existing_snapshot_as_unchanged(
 
     assert result.counts.inserted == 0
     assert result.counts.unchanged == 1
+
+
+def test_approved_manual_file_uses_existing_import_hash_and_idempotency(
+    tmp_path: Path,
+) -> None:
+    source_file = tmp_path / "hospitals.csv"
+    with source_file.open("w", newline="", encoding="utf-8-sig") as stream:
+        writer = csv.writer(stream)
+        writer.writerow(["机构名称"])
+        writer.writerow(["北京测试医院"])
+    adapter = OpenDataFileAdapter(source_file, BEIJING_HOSPITALS)
+    registration = SourceRegistration(
+        "source-id",
+        BEIJING_HOSPITALS.source_name,
+        BEIJING_HOSPITALS.dataset_url,
+        "Official unconditional open dataset; imported from operator-downloaded file",
+        frozenset({"source_fields", "name"}),
+        "manual_only",
+        "approved",
+    )
+    repository = MemoryRepository(registration)
+
+    first = CollectorRunner(repository, adapter).run("110000", limit=1)  # type: ignore[arg-type]
+    second = CollectorRunner(repository, adapter).run("110000", limit=1)  # type: ignore[arg-type]
+
+    assert first.status == "succeeded"
+    assert first.counts.inserted == 1
+    assert second.status == "succeeded"
+    assert second.counts.unchanged == 1
+    assert repository.writes == 1

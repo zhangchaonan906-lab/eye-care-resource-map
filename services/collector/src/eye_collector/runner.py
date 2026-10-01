@@ -101,7 +101,9 @@ class CollectorRunner:
                     if limit is not None and requested_records >= limit:
                         break
                     requested_records += 1
-                    self._policy.authorize_record(registration, record)
+                    self._policy.authorize_record(
+                        registration, record, access_method=descriptor.access_method
+                    )
                     content_hash = canonical_sha256(record.raw_payload)
                     marker = (record.source_key, content_hash)
                     if dry_run:

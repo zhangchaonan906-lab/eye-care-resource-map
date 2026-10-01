@@ -26,6 +26,23 @@ def test_approved_source_is_allowed(approved_source: SourceRegistration) -> None
     assert SourcePolicy().authorize(approved_source) is None
 
 
+def test_manual_only_source_can_be_used_by_file_adapter(
+    approved_source: SourceRegistration,
+) -> None:
+    source = replace(approved_source, access_policy="manual_only")
+
+    assert SourcePolicy().authorize(source, access_method="file") is None
+
+
+def test_manual_only_source_cannot_be_used_for_http(
+    approved_source: SourceRegistration,
+) -> None:
+    source = replace(approved_source, access_policy="manual_only")
+
+    with pytest.raises(SourcePolicyError, match="access method"):
+        SourcePolicy().authorize(source, access_method="http")
+
+
 @pytest.mark.parametrize("status", ["pending", "suspended"])
 def test_non_approved_source_is_rejected_before_run(
     approved_source: SourceRegistration, status: str

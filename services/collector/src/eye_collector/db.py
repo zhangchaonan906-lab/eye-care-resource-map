@@ -46,7 +46,7 @@ class PostgresRepository:
             if len(rows) > 1:
                 raise SourcePolicyError("source registration is ambiguous")
             registration = self._registration(rows[0]) if rows else None
-            policy.authorize(registration)
+            policy.authorize(registration, access_method=descriptor.access_method)
             assert registration is not None
             run_row = self._connection.execute(
                 """
