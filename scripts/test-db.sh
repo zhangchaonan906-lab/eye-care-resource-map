@@ -59,6 +59,8 @@ compose exec -T db psql -h 127.0.0.1 -U eye -d eye -v ON_ERROR_STOP=1 \
   -f /workspace/db/migrations/010_etl_import_run_scope.sql
 compose exec -T db psql -h 127.0.0.1 -U eye -d eye -v ON_ERROR_STOP=1 \
   -f /workspace/db/migrations/011_public_api.sql
+compose exec -T db psql -h 127.0.0.1 -U eye -d eye -v ON_ERROR_STOP=1 \
+  -f /workspace/db/migrations/012_nearby_api.sql
 
 for sql_file in \
   /workspace/db/tests/001_core.sql \
@@ -73,6 +75,8 @@ for sql_file in \
 done
 compose exec -T db psql -h 127.0.0.1 -U eye -d eye -v ON_ERROR_STOP=1 \
   -f /workspace/db/tests/011_public_api.sql
+compose exec -T db psql -h 127.0.0.1 -U eye -d eye -v ON_ERROR_STOP=1 \
+  -f /workspace/db/tests/012_nearby_api.sql
 compose exec -T db psql -h 127.0.0.1 -U eye -d eye -v ON_ERROR_STOP=1 \
   -v collector_password="$collector_password" -f /workspace/scripts/provision-collector-login.sql
 compose exec -T db psql -h 127.0.0.1 -U eye -d eye -v ON_ERROR_STOP=1 \

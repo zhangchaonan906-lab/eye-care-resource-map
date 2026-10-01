@@ -13,20 +13,26 @@ const ids = {
     "00000000-0000-4000-8000-000000000212",
     "00000000-0000-4000-8000-000000000213",
     "00000000-0000-4000-8000-000000000214",
+    "00000000-0000-4000-8000-000000000215",
+    "00000000-0000-4000-8000-000000000216",
   ],
   records: [
     "00000000-0000-4000-8000-000000000221",
     "00000000-0000-4000-8000-000000000222",
     "00000000-0000-4000-8000-000000000223",
     "00000000-0000-4000-8000-000000000224",
+    "00000000-0000-4000-8000-000000000225",
+    "00000000-0000-4000-8000-000000000226",
   ],
 };
 
 const samples = [
   { name: "测试眼科医院A", normalized: "测试眼科医院A", category: "eye_specialty_hospital", region: ids.regionBeijing, lon: 116.4, lat: 39.9 },
-  { name: "测试综合医院B", normalized: "测试综合医院B", category: "general_hospital_ophthalmology", region: ids.regionBeijing, lon: 116.5, lat: 39.8 },
-  { name: "测试眼科诊所C", normalized: "测试眼科诊所C", category: "eye_clinic", region: ids.regionShanghai, lon: 116.6, lat: 39.7 },
+  { name: "测试综合医院B", normalized: "测试综合医院B", category: "general_hospital_ophthalmology", region: ids.regionBeijing, lon: 116.41, lat: 39.9 },
+  { name: "测试眼科诊所C", normalized: "测试眼科诊所C", category: "eye_clinic", region: ids.regionShanghai, lon: 116.4, lat: 39.91 },
   { name: "测试院外医院D", normalized: "测试院外医院D", category: "ophthalmology_center", region: ids.regionShanghai, lon: 120.0, lat: 40.0 },
+  { name: "测试院外医院E", normalized: "测试院外医院E", category: "eye_clinic", region: ids.regionShanghai, lon: 117.3, lat: 39.9 },
+  { name: "测试未发布医院", normalized: "测试未发布医院", category: "eye_specialty_hospital", region: ids.regionBeijing, lon: 116.4001, lat: 39.9, published: false },
 ];
 
 let admin: Pool;
@@ -95,8 +101,8 @@ beforeAll(async () => {
         `INSERT INTO app_private.facilities
          (id, name, normalized_name, category, region_id, address, ophthalmology_status,
           verification_status, published_at, last_verified_at)
-         VALUES ($1, $2, $3, $4, $5, $6, 'verified', 'published', now(), now())`,
-        [ids.facilities[i], sample.name, sample.normalized, sample.category, sample.region, `测试地址${i}`],
+         VALUES ($1, $2, $3, $4, $5, $6, 'verified', $7, CASE WHEN $7 = 'published' THEN now() END, CASE WHEN $7 = 'published' THEN now() END)`,
+        [ids.facilities[i], sample.name, sample.normalized, sample.category, sample.region, `测试地址${i}`, sample.published === false ? "candidate" : "published"],
       );
       await client.query(
         `INSERT INTO app_private.facility_locations
@@ -179,6 +185,47 @@ describe("PostGIS public facility repository", () => {
       const result = await client.query(
         `EXPLAIN (FORMAT JSON) SELECT facility_id FROM app_private.facility_locations
          WHERE ST_Intersects(geog_wgs84, ST_MakeEnvelope(116, 39, 117, 40, 4326)::geography)`,
+      );
+      expect(JSON.stringify(result.rows)).toContain("facility_locations_geog_wgs84_idx");
+      await client.query("ROLLBACK");
+    } finally {
+      client.release();
+    }
+  });
+
+  it("filters nearby published facilities by radius and category, orders by exact distance, and reports truncation", async () => {
+    const withinThreeKm = await repository.nearby({ latitude: 39.9, longitude: 116.4, radiusMeters: 3_000, limit: 50 });
+    expect(withinThreeKm.items.map(({ id }) => id)).toEqual(ids.facilities.slice(0, 3));
+    expect(withinThreeKm.items.map(({ distanceMeters }) => distanceMeters)).toEqual([...withinThreeKm.items.map(({ distanceMeters }) => distanceMeters)].sort((a, b) => a - b));
+    expect(withinThreeKm.items[0].distanceMeters).toBeCloseTo(0, 0);
+    expect(withinThreeKm.items[1].distanceMeters).toBeGreaterThan(800);
+    expect(withinThreeKm.items[1].distanceMeters).toBeLessThan(900);
+    expect(withinThreeKm.items[2].distanceMeters).toBeGreaterThan(1_000);
+    expect(withinThreeKm.items.some(({ id }) => id === ids.facilities[5])).toBe(false);
+    const oneKm = await repository.nearby({ latitude: 39.9, longitude: 116.4, radiusMeters: 1_000, limit: 50 });
+    expect(withinThreeKm.items[1].distanceMeters).toBeLessThan(1_000);
+    expect(withinThreeKm.items[2].distanceMeters).toBeGreaterThan(1_000);
+    expect(oneKm.items.map(({ id }) => id)).toEqual(ids.facilities.slice(0, 2));
+    expect((await repository.nearby({ latitude: 39.9, longitude: 116.4, radiusMeters: 3_000, category: "eye_clinic", limit: 50 })).items.map(({ id }) => id)).toEqual([ids.facilities[2]]);
+
+    const limited = await repository.nearby({ latitude: 39.9, longitude: 116.4, radiusMeters: 50_000, limit: 2 });
+    expect(limited.items).toHaveLength(2);
+    expect(limited.truncated).toBe(true);
+    expect((await repository.nearby({ latitude: 0, longitude: 0, radiusMeters: 500, limit: 50 })).items).toEqual([]);
+  });
+
+  it("keeps nearby access behind the API function and uses the geography GiST index", async () => {
+    expect(await runtimeRole.query("SELECT * FROM public.query_published_facilities_nearby(39.9, 116.4, 3000, NULL, 51)")).toBeDefined();
+    await expect(runtimeRole.query("SELECT * FROM app_private.facility_locations")).rejects.toThrow();
+    const client = await admin.connect();
+    try {
+      await client.query("BEGIN");
+      await client.query("SET LOCAL enable_seqscan = off");
+      const result = await client.query(
+        `EXPLAIN (FORMAT JSON) SELECT location.facility_id
+         FROM app_private.facility_locations AS location
+         JOIN public.published_facility_api AS api ON api.id = location.facility_id
+         WHERE ST_DWithin(location.geog_wgs84, ST_SetSRID(ST_MakePoint(116.4, 39.9), 4326)::geography, 3000)`,
       );
       expect(JSON.stringify(result.rows)).toContain("facility_locations_geog_wgs84_idx");
       await client.query("ROLLBACK");

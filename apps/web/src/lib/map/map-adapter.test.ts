@@ -6,7 +6,8 @@ import { initializeFacilityMap } from "./map-adapter";
 const harness = vi.hoisted(() => ({
   handlers: new Map<string, (...args: unknown[]) => void>(),
   options: undefined as Record<string, unknown> | undefined,
-  addedSource: undefined as { id: string; options: Record<string, unknown> } | undefined,
+  addedSources: [] as Array<{ id: string; options: Record<string, unknown> }>,
+  sources: new Map<string, { setData: ReturnType<typeof vi.fn>; getClusterExpansionZoom: ReturnType<typeof vi.fn> }>(),
   addedLayers: [] as Array<Record<string, unknown>>,
   setData: vi.fn(),
   easeTo: vi.fn(),
@@ -23,9 +24,9 @@ vi.mock("maplibre-gl", async () => {
       on(event: string, layerOrListener: string | ((...args: unknown[]) => void), listener?: (...args: unknown[]) => void) {
         harness.handlers.set(`${event}:${typeof layerOrListener === "string" ? layerOrListener : ""}`, typeof layerOrListener === "function" ? layerOrListener : listener!);
       }
-      addSource(id: string, options: Record<string, unknown>) { harness.addedSource = { id, options }; }
+      addSource(id: string, options: Record<string, unknown>) { harness.addedSources.push({ id, options }); harness.sources.set(id, { setData: harness.setData, getClusterExpansionZoom: vi.fn(async () => 9) }); }
       addLayer(layer: Record<string, unknown>) { harness.addedLayers.push(layer); }
-      getSource() { return { type: "geojson", setData: harness.setData, getClusterExpansionZoom: vi.fn(async () => 9) }; }
+      getSource(id: string) { return harness.sources.get(id); }
       getLayer() { return true; }
       setPaintProperty() { return undefined; }
       getBounds() { return { getWest: () => 116, getSouth: () => 39, getEast: () => 116.5, getNorth: () => 40 }; }
@@ -57,7 +58,8 @@ describe("MapLibre adapter", () => {
   beforeEach(() => {
     harness.handlers.clear();
     harness.options = undefined;
-    harness.addedSource = undefined;
+    harness.addedSources = [];
+    harness.sources.clear();
     harness.addedLayers = [];
     harness.setData.mockClear();
     harness.easeTo.mockClear();
@@ -80,15 +82,23 @@ describe("MapLibre adapter", () => {
     expect(JSON.stringify(harness.options)).not.toMatch(/https?:/);
 
     harness.handlers.get("load:")?.();
-    expect(harness.addedSource?.id).toBe("facilities");
-    expect(harness.addedSource?.options).toMatchObject({ cluster: true, clusterMaxZoom: 17, clusterRadius: 48 });
-    expect(harness.addedLayers.map((layer) => layer.id)).toEqual(["facility-clusters", "facility-cluster-count", "facility-points"]);
+    expect(harness.addedSources.map(({ id }) => id)).toEqual(["facilities", "user-location"]);
+    expect(harness.addedSources[0].options).toMatchObject({ cluster: true, clusterMaxZoom: 17, clusterRadius: 48 });
+    expect(harness.addedSources[1].options).toMatchObject({ type: "geojson" });
+    expect(harness.addedLayers.map((layer) => layer.id)).toEqual(["facility-clusters", "user-location-halo", "user-location-point", "facility-cluster-count", "facility-points"]);
 
     map.setFacilities([sampleFacility], sampleFacility.id);
-    expect(harness.setData).toHaveBeenCalledWith(expect.objectContaining({
+    expect(harness.sources.get("facilities")?.setData).toHaveBeenCalledWith(expect.objectContaining({
       type: "FeatureCollection",
       features: [expect.objectContaining({ geometry: { type: "Point", coordinates: [116.4, 39.9] } })],
     }));
+    map.setUserLocation({ longitude: 116.41, latitude: 39.91 });
+    expect(harness.sources.get("user-location")?.setData).toHaveBeenCalledWith({
+      type: "FeatureCollection",
+      features: [{ type: "Feature", geometry: { type: "Point", coordinates: [116.41, 39.91] }, properties: {} }],
+    });
+    map.setUserLocation(null);
+    expect(harness.sources.get("user-location")?.setData).toHaveBeenLastCalledWith({ type: "FeatureCollection", features: [] });
     harness.handlers.get("click:facility-points")?.({ features: [{ properties: { id: sampleFacility.id } }] });
     expect(select).toHaveBeenCalledWith(sampleFacility.id);
     harness.handlers.get("click:facility-clusters")?.({ point: { x: 1, y: 1 } });

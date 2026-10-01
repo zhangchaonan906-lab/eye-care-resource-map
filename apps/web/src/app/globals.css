@@ -21,8 +21,12 @@ button:focus-visible, input:focus-visible, select:focus-visible, a:focus-visible
 .eye-map__header h1 { margin: 2px 0 3px; font-size: 23px; letter-spacing: .01em; }
 .eye-map__eyebrow { margin: 0; color: var(--accent); font-size: 11px; font-weight: 750; letter-spacing: .13em; }
 .eye-map__disclaimer { margin: 0; color: var(--muted); font-size: 13px; }
-.eye-map__location { padding: 9px 13px; border: 1px solid var(--line); border-radius: 9px; color: #738489; background: #f4f7f7; font-size: 12px; }
-.eye-map__location:disabled { cursor: not-allowed; }
+.eye-map__location-control { display: grid; justify-items: end; gap: 5px; max-width: 290px; }
+.eye-map__location { padding: 9px 13px; border: 1px solid #b9d4d7; border-radius: 9px; color: var(--accent); background: #f4fafa; font-size: 12px; font-weight: 700; }
+.eye-map__location:disabled { cursor: progress; opacity: .7; }
+.eye-map__location-control p { margin: 0; color: #8b393c; text-align: right; font-size: 11px; line-height: 1.45; }
+.eye-map__location-control .eye-map__location-fallback { color: var(--muted); }
+.eye-map__location-retry { padding: 4px 7px; border: 0; color: var(--accent); background: transparent; font-size: 11px; text-decoration: underline; }
 .eye-map__workspace { display: grid; grid-template-columns: minmax(345px, 390px) minmax(0, 1fr); gap: 12px; min-height: 0; flex: 1; padding: 12px; }
 .eye-map__sidebar { z-index: 1; display: flex; flex-direction: column; min-height: 0; overflow: hidden; background: var(--surface); border: 1px solid var(--line); border-radius: 14px; box-shadow: 0 6px 24px #23454b0d; }
 .eye-map__controls { display: grid; gap: 11px; padding: 16px; border-bottom: 1px solid var(--line); }
@@ -33,6 +37,15 @@ button:focus-visible, input:focus-visible, select:focus-visible, a:focus-visible
 .eye-map__status [role="alert"] { color: #8b393c; background: #fff2f1; }
 .eye-map__status button { margin: 0 0 12px; padding: 7px 10px; border: 1px solid #b9d4d7; border-radius: 7px; color: var(--accent); background: white; }
 .eye-map__list { min-height: 0; overflow: auto; flex: 1; }
+.eye-map__nearby { display: flex; flex-direction: column; min-height: 0; max-height: 46%; overflow: auto; border-top: 1px solid var(--line); }
+.eye-map__nearby-heading { position: sticky; top: 0; z-index: 1; display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 8px 14px; background: white; }
+.eye-map__nearby-heading h2 { margin: 0; font-size: 14px; }
+.eye-map__nearby > p { margin: 4px 14px; color: var(--muted); font-size: 12px; }
+.eye-map__nearby [role="alert"] { color: #8b393c; }
+.eye-map__nearby [role="alert"] button { margin-left: 5px; border: 0; color: var(--accent); background: transparent; text-decoration: underline; }
+.eye-map__radius { display: flex; align-items: center; gap: 6px; color: var(--muted); font-size: 11px; }
+.eye-map__radius select { padding: 5px 7px; border: 1px solid var(--line); border-radius: 7px; color: var(--ink); background: white; font-size: 11px; }
+.eye-map__nearby .eye-map__list { flex: none; min-height: 0; overflow: visible; }
 .eye-map__list h2 { display: flex; justify-content: space-between; margin: 6px 16px 4px; font-size: 14px; }
 .eye-map__list h2 span { color: var(--muted); font-size: 12px; font-weight: 500; }
 .eye-map__list ul, .eye-map__detail ul { margin: 0; padding: 0; list-style: none; }
@@ -42,6 +55,7 @@ button:focus-visible, input:focus-visible, select:focus-visible, a:focus-visible
 .eye-map__facility.is-unknown { opacity: .75; }
 .eye-map__facility-name { font-size: 14px; font-weight: 750; }
 .eye-map__facility-category, .eye-map__facility-address, .eye-map__facility-date { color: var(--muted); font-size: 12px; line-height: 1.45; }
+.eye-map__facility-distance { color: var(--accent); font-size: 12px; font-weight: 750; }
 .eye-map__verified { color: #236c58; font-size: 11px; }
 .eye-map__coverage-note { margin: 0; padding: 10px 16px; border-top: 1px solid var(--line); color: var(--muted); font-size: 11px; }
 .eye-map__map-column { position: relative; min-width: 0; min-height: 0; overflow: hidden; border: 1px solid var(--line); border-radius: 14px; background: #eaf0f2; }
@@ -66,6 +80,7 @@ button:focus-visible, input:focus-visible, select:focus-visible, a:focus-visible
   .eye-map__header { align-items: flex-start; padding: 13px 15px; }
   .eye-map__header h1 { font-size: 19px; }
   .eye-map__disclaimer { max-width: 270px; font-size: 11px; line-height: 1.5; }
+  .eye-map__location-control { max-width: 130px; }
   .eye-map__location { max-width: 124px; line-height: 1.4; }
   .eye-map__workspace { display: flex; flex-direction: column-reverse; gap: 8px; padding: 8px; }
   .eye-map__sidebar { flex: 1; min-height: 0; }
@@ -74,6 +89,7 @@ button:focus-visible, input:focus-visible, select:focus-visible, a:focus-visible
   .eye-map__map-column { flex: 0 0 48%; min-height: 250px; }
   .eye-map__map-region, .eye-map__map { min-height: 250px; }
   .eye-map__list { min-height: 100px; }
+  .eye-map__nearby { max-height: 50%; }
   .eye-map__detail { top: auto; right: 8px; bottom: 8px; width: calc(100% - 16px); max-height: 72%; }
 }
 

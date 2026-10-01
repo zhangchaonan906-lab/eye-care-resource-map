@@ -3,10 +3,11 @@
 import { useEffect, useRef } from "react";
 import type { PublicFacility } from "../../lib/public-api/types";
 import { basemapConfig } from "../../lib/basemap/config";
-import { initializeFacilityMap, type FacilityMapController, type Viewport } from "../../lib/map/map-adapter";
+import { initializeFacilityMap, type FacilityMapController, type MapLocation, type Viewport } from "../../lib/map/map-adapter";
 
 type Props = {
   facilities: PublicFacility[];
+  userLocation: MapLocation | null;
   selectedId: string | null;
   onController: (controller: FacilityMapController | null) => void;
   onViewport: (viewport: Viewport) => void;
@@ -15,14 +16,19 @@ type Props = {
   onError: () => void;
 };
 
-export function MapCanvas({ facilities, selectedId, onController, onViewport, onSelectFacility, onClearSelection, onError }: Props) {
+export function MapCanvas({ facilities, userLocation, selectedId, onController, onViewport, onSelectFacility, onClearSelection, onError }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<FacilityMapController | null>(null);
   const callbackRef = useRef({ onViewport, onSelectFacility, onClearSelection });
+  const latestMapDataRef = useRef({ facilities, selectedId, userLocation });
 
   useEffect(() => {
     callbackRef.current = { onViewport, onSelectFacility, onClearSelection };
   }, [onViewport, onSelectFacility, onClearSelection]);
+
+  useEffect(() => {
+    latestMapDataRef.current = { facilities, selectedId, userLocation };
+  }, [facilities, selectedId, userLocation]);
 
   useEffect(() => {
     const container = containerRef.current;
@@ -38,6 +44,11 @@ export function MapCanvas({ facilities, selectedId, onController, onViewport, on
         return;
       }
       mapRef.current = controller;
+      controller.setFacilities(latestMapDataRef.current.facilities, latestMapDataRef.current.selectedId);
+      controller.setUserLocation(latestMapDataRef.current.userLocation);
+      if (latestMapDataRef.current.userLocation) {
+        controller.flyTo(latestMapDataRef.current.userLocation.longitude, latestMapDataRef.current.userLocation.latitude);
+      }
       onController(controller);
     }).catch(() => {
       if (active) onError();
@@ -53,6 +64,10 @@ export function MapCanvas({ facilities, selectedId, onController, onViewport, on
   useEffect(() => {
     mapRef.current?.setFacilities(facilities, selectedId);
   }, [facilities, selectedId]);
+
+  useEffect(() => {
+    mapRef.current?.setUserLocation(userLocation);
+  }, [userLocation]);
 
   return (
     <section className="eye-map__map-region" aria-label="医疗机构地图">
