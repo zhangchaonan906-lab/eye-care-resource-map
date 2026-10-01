@@ -42,6 +42,16 @@ def make_runner(revision: str = "stable") -> tuple[PostgresRepository, HttpClien
 
 
 def test_database_fixture_snapshots_are_idempotent_and_changed_content_is_historical() -> None:
+    with psycopg.connect(database_url(), autocommit=True) as connection:
+        existing_runs = connection.execute(
+            """
+            SELECT count(*) FROM app_private.import_runs ir
+            JOIN app_private.source_catalog sc ON sc.id = ir.source_id
+            WHERE sc.name = 'Fixture Directory'
+            """
+        ).fetchone()
+    assert existing_runs is not None
+
     repository, client, runner = make_runner()
     try:
         first = runner.run("110000")
@@ -94,7 +104,7 @@ def test_database_fixture_snapshots_are_idempotent_and_changed_content_is_histor
             WHERE sc.name = 'Fixture Directory'
             """
         ).fetchone()
-        assert run_states == (3, 3)
+        assert run_states == (existing_runs[0] + 3, existing_runs[0] + 3)
 
 
 def test_database_failed_run_is_closed_and_error_is_redacted() -> None:

@@ -42,7 +42,6 @@ compose exec -T db psql -U eye -d eye -v ON_ERROR_STOP=1 \
   -f /workspace/scripts/seed-fixture-source.sql
 
 cd "$repo_root/services/collector"
-python3 -m pytest -m database -q
 cli_result="$(python3 -m eye_collector.cli run --source fixture --region 110000 --dry-run --limit 1)"
 printf '%s' "$cli_result" | python3 -c '
 import json, sys
@@ -51,3 +50,4 @@ assert result["status"] == "succeeded"
 assert result["dry_run"] is True
 assert result["counts"]["inserted"] == 1
 '
+python3 -m pytest -m database -q

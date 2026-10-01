@@ -36,12 +36,12 @@ try {
   $env:DATABASE_URL = "postgresql://eye_collector_runtime:$collectorPassword@127.0.0.1:$testPort/eye"
   Push-Location (Join-Path $repoRoot 'services/collector')
   try {
-    py -m pytest -m database -q
-    if ($LASTEXITCODE -ne 0) { throw 'Collector database integration tests failed.' }
     $cliResult = py -m eye_collector.cli run --source fixture --region 110000 --dry-run --limit 1 | ConvertFrom-Json
-    if ($LASTEXITCODE -ne 0 -or $cliResult.status -ne 'succeeded' -or -not $cliResult.dry_run) {
+    if ($LASTEXITCODE -ne 0 -or $cliResult.status -ne 'succeeded' -or -not $cliResult.dry_run -or $cliResult.counts.inserted -ne 1) {
       throw 'Collector CLI dry-run verification failed.'
     }
+    py -m pytest -m database -q
+    if ($LASTEXITCODE -ne 0) { throw 'Collector database integration tests failed.' }
   }
   finally {
     Pop-Location
