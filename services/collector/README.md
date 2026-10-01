@@ -145,7 +145,7 @@ py -m eye_collector.cli pilot `
   --dry-run
 ```
 
-北京首批导入范围为 50–150 条；先用 `--limit 50` 做审核样本，再依据 dry-run 和人工审核决定是否正式运行。深圳数据集约 27 条，不能为凑足 50 条而复制或合成记录；正式运行按官方文件的实际记录数设置 limit，并在导入后检查全部记录。审核 dry-run 后，删除 `--dry-run` 才会写入。之后可运行 `python -m eye_collector.cli process` 执行现有 P3 ETL，再按 QA 清单人工检查记录；眼科证据不足时必须保持 `unknown`。没有真实文件时，不运行上述导入命令，不以 fixture 代替。
+北京首批导入范围为 50–150 条；先用 `--limit 50` 做审核样本，再依据 dry-run 和人工审核决定是否正式运行。深圳数据集约 27 条，不能为凑足 50 条而复制或合成记录；正式运行按官方文件的实际记录数设置 limit，并在导入后检查全部记录。审核 dry-run 后，删除 `--dry-run` 才会写入。正式导入结果中的 `run_id` 可传给 P3 作精确批次处理：`process --import-run-id <run_id>` 只接受成功且来源仍为 approved + `manual_only` 的批次，并只读取该批次；不指定 ID 时仍只处理 `automated_access_allowed` 来源。migration 010 只给 ETL 运行时增加 `import_runs` 只读权限，不改变来源权限。运行后按 QA 清单人工检查记录；眼科证据不足时必须保持 `unknown`。没有真实文件时，不运行上述导入命令，不以 fixture 代替。
 
 QA 清单：医院名称、地址、区、来源分类、注册/参考 ID、来源 URL、原始字段映射、重复状态和眼科证据状态。北京至少人工抽样 50 条；深圳少于 50 条时检查全部实际记录。检查结果需标明数据文件 SHA-256 与 import run，便于回溯。
 

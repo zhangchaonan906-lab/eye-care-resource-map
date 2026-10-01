@@ -53,6 +53,8 @@ compose exec -T db psql -h 127.0.0.1 -U eye -d eye -v ON_ERROR_STOP=1 \
   -f /workspace/db/tests/009_real_export_compatibility_before.sql
 compose exec -T db psql -h 127.0.0.1 -U eye -d eye -v ON_ERROR_STOP=1 \
   -f /workspace/db/migrations/009_real_export_compatibility.sql
+compose exec -T db psql -h 127.0.0.1 -U eye -d eye -v ON_ERROR_STOP=1 \
+  -f /workspace/db/migrations/010_etl_import_run_scope.sql
 
 for sql_file in \
   /workspace/db/tests/001_core.sql \

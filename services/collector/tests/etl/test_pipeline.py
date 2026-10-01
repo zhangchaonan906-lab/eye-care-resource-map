@@ -35,10 +35,12 @@ class Repository:
     def atomic(self) -> Iterator[None]:
         yield
 
-    def count_existing_candidates(self) -> int:
+    def count_existing_candidates(self, *, import_run_id: str | None = None) -> int:
         return self.already_processed
 
-    def fetch_pending(self, limit: int | None = None) -> list[SourceSnapshot]:
+    def fetch_pending(
+        self, limit: int | None = None, *, import_run_id: str | None = None
+    ) -> list[SourceSnapshot]:
         return self.snapshots[:limit] if limit is not None else self.snapshots
 
     def insert_candidate(self, normalized: Any, evidence: tuple[Any, ...]) -> str:

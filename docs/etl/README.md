@@ -10,9 +10,13 @@ py -m eye_collector.cli process --limit 100
 ```
 
 `ETL_DATABASE_URL` must use the dedicated `eye_etl_runtime` login. The login
-inherits the `eye_etl` role, which can read approved source snapshots and
-facility targets and can write candidate/evidence/review rows. It has no write
-privileges on `facilities`, `organizations`, or `source_records`.
+inherits the `eye_etl` role, which can read approved automated-access snapshots
+and facility targets and can write candidate/evidence/review rows. For an
+explicit `--import-run-id`, it may also read the named run's status and process
+only that run when its source remains approved + `manual_only`. Migration 010
+grants read-only access to `import_runs`; it does not change source access
+policy. The role has no write privileges on `facilities`, `organizations`, or
+`source_records`.
 
 ## Transform rules
 

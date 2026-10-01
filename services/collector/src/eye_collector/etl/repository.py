@@ -38,16 +38,36 @@ class ETLRepository:
         with self._connection.transaction():
             yield
 
-    def fetch_pending(self, limit: int | None = None) -> list[SourceSnapshot]:
+    def fetch_pending(
+        self, limit: int | None = None, *, import_run_id: str | None = None
+    ) -> list[SourceSnapshot]:
         if limit is not None and limit < 1:
             raise ValueError("limit must be a positive integer")
+        if import_run_id is not None:
+            scope = self._connection.execute(
+                """
+                SELECT ir.status, sc.status, sc.access_policy
+                FROM app_private.import_runs ir
+                JOIN app_private.source_catalog sc ON sc.id = ir.source_id
+                WHERE ir.id = %s
+                """,
+                (import_run_id,),
+            ).fetchone()
+            if scope != ("succeeded", "approved", "manual_only"):
+                raise ValueError(
+                    "import-run-id must identify a succeeded run from an approved "
+                    "manual_only source"
+                )
         rows = self._connection.execute(
             """
             SELECT sr.id::text, sr.raw_payload, sc.registration_id_reliable
             FROM app_private.source_records sr
             JOIN app_private.source_catalog sc ON sc.id = sr.source_id
             WHERE sc.status = 'approved'
-              AND sc.access_policy = 'automated_access_allowed'
+              AND (
+                (sc.access_policy = 'automated_access_allowed' AND %s::uuid IS NULL)
+                OR (sc.access_policy = 'manual_only' AND sr.import_run_id = %s::uuid)
+              )
               AND NOT EXISTS (
                 SELECT 1 FROM app_private.candidate_records cr
                 WHERE cr.source_record_id = sr.id
@@ -60,14 +80,14 @@ class ETLRepository:
             ORDER BY sr.collected_at, sr.id
             LIMIT %s
             """,
-            (_PIPELINE_VERSION, limit),
+            (import_run_id, import_run_id, _PIPELINE_VERSION, limit),
         ).fetchall()
         return [
             SourceSnapshot(str(row[0]), row[1], bool(row[2]))
             for row in rows
         ]
 
-    def count_existing_candidates(self) -> int:
+    def count_existing_candidates(self, *, import_run_id: str | None = None) -> int:
         row = self._connection.execute(
             """
             SELECT count(*)
@@ -75,8 +95,12 @@ class ETLRepository:
             JOIN app_private.source_catalog sc ON sc.id = sr.source_id
             JOIN app_private.candidate_records cr ON cr.source_record_id = sr.id
             WHERE sc.status = 'approved'
-              AND sc.access_policy = 'automated_access_allowed'
-            """
+              AND (
+                (sc.access_policy = 'automated_access_allowed' AND %s::uuid IS NULL)
+                OR (sc.access_policy = 'manual_only' AND sr.import_run_id = %s::uuid)
+              )
+            """,
+            (import_run_id, import_run_id),
         ).fetchone()
         return int(row[0]) if row is not None else 0
 

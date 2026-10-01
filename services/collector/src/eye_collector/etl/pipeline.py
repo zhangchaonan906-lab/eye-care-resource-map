@@ -21,9 +21,11 @@ from eye_collector.logging_utils import safe_error_summary
 class PipelineRepository(Protocol):
     def atomic(self) -> AbstractContextManager[None]: ...
 
-    def fetch_pending(self, limit: int | None = None) -> list[SourceSnapshot]: ...
+    def fetch_pending(
+        self, limit: int | None = None, *, import_run_id: str | None = None
+    ) -> list[SourceSnapshot]: ...
 
-    def count_existing_candidates(self) -> int: ...
+    def count_existing_candidates(self, *, import_run_id: str | None = None) -> int: ...
 
     def insert_candidate(
         self,
@@ -56,15 +58,19 @@ class Pipeline:
         self._repository = repository
         self._logger = logger or logging.getLogger("eye_collector.etl")
 
-    def run(self, *, limit: int | None = None) -> PipelineStats:
+    def run(
+        self, *, limit: int | None = None, import_run_id: str | None = None
+    ) -> PipelineStats:
         if limit is not None and limit < 1:
             raise ValueError("limit must be a positive integer")
 
-        snapshots = self._repository.fetch_pending(limit)
+        snapshots = self._repository.fetch_pending(limit, import_run_id=import_run_id)
         counts = {
             "source_records_read": len(snapshots),
             "candidates_created": 0,
-            "already_processed": self._repository.count_existing_candidates(),
+            "already_processed": self._repository.count_existing_candidates(
+                import_run_id=import_run_id
+            ),
             "skipped": 0,
             "evidence_created": 0,
             "matched": 0,

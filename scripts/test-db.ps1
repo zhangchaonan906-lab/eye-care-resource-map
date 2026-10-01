@@ -43,6 +43,8 @@ try {
   if ($LASTEXITCODE -ne 0) { throw 'P5 pre-migration source permission check failed.' }
   docker compose -p $projectName exec -T db psql -U eye -d eye -v ON_ERROR_STOP=1 -f /workspace/db/migrations/009_real_export_compatibility.sql
   if ($LASTEXITCODE -ne 0) { throw 'P5 real export compatibility migration failed.' }
+  docker compose -p $projectName exec -T db psql -U eye -d eye -v ON_ERROR_STOP=1 -f /workspace/db/migrations/010_etl_import_run_scope.sql
+  if ($LASTEXITCODE -ne 0) { throw 'P5 ETL import-run scope migration failed.' }
   $testFiles = @(
     '/workspace/db/tests/001_core.sql',
     '/workspace/db/tests/002_evidence_location.sql',
