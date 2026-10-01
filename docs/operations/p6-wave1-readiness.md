@@ -53,3 +53,15 @@
 - 本阶段没有真实文件、真实数据导入、真实地理编码或设施发布。
 - `source_status` 只取 `APPROVED`、`UNKNOWN`、`REJECTED`、`STALE`；`access_policy` 只取 `automated_access_allowed`、`manual_only`、`application_required`、`query_only`、`unknown`。
 - 无来源记录或文件数据不会自动转成 `pilot_ready`；必须按地区+来源+import run+QA 样本分别记录状态。
+
+## P6-B2 解锁准备与 Next External Action
+
+本节记录解锁材料状态，不更改来源资格，不代表申请已提交、批准已取得或试点已就绪。
+
+| Region | Current Source Status | Current Access Policy | Next External Action | Awaiting |
+|---|---|---|---|---|
+| 天津 | UNKNOWN | manual_only | 将[权利确认函](../data-sources/nationwide/outreach/tianjin-rights-confirmation-request.md)提交至平台官方咨询渠道，必要时转交市卫健委数据提供部门 | 长期保存、公开展示/商业使用、历史版本、撤回处置、账户/审批、署名及人工下载的正式回复 |
+| 河北 | UNKNOWN | unknown | 将[来源位置询问函](../data-sources/nationwide/outreach/hebei-source-location-request.md)提交至河北公共数据开放平台、数据和政务服务局或省医保局官方咨询渠道 | 可访问的河北原始 dataset detail page 及数据集范围、开放属性、获取与使用条款 |
+| 浙江 | UNKNOWN | application_required | 由真实申请主体人工核实并提交[浙江申请草稿](../data-sources/nationwide/applications/zhejiang-data-use-application-draft.md) | 正式批准文件与项目具体协议 |
+
+天津决策模板：[权利确认记录](../data-sources/nationwide/outreach/tianjin-rights-decision-template.md)。浙江批准模板：[批准决策记录](../data-sources/nationwide/applications/zhejiang-approval-decision-template.md)。在新官方证据到达并审核前，三个来源的 `source_status` 均保持 `UNKNOWN`，`Ready For Pilot` 均为 `NO`。逐地区人工操作见[外部动作清单](p6-wave1-external-actions.md)。
