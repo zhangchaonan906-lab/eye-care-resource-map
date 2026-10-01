@@ -1,4 +1,4 @@
-import type { PublicFacilityRepository } from "./types";
+import { FACILITY_CATEGORIES, FACILITY_CATEGORY_LABELS, type PublicFacilityRepository } from "./types";
 import {
   parseFacilityQuery,
   parseNearbyQuery,
@@ -78,14 +78,8 @@ export async function nearbyHandler(request: Request, repository: PublicFacility
 
 export async function categoriesHandler(publishedFacilityCount = 0): Promise<Response> {
   return json({
-    data: [
-      { id: "eye_specialty_hospital", label: "眼科专科医院" },
-      { id: "general_hospital_ophthalmology", label: "设有眼科的综合医院" },
-      { id: "ophthalmology_center", label: "眼科中心" },
-      { id: "eye_clinic", label: "眼科诊所" },
-      { id: "unknown", label: "待核验" },
-    ],
-    meta: { count: 5, publishedFacilityCount },
+    data: FACILITY_CATEGORIES.map((id) => ({ id, label: FACILITY_CATEGORY_LABELS[id] })),
+    meta: { count: FACILITY_CATEGORIES.length, publishedFacilityCount },
     error: null,
   });
 }

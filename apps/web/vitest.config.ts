@@ -3,7 +3,13 @@ import { defineConfig } from "vitest/config";
 export default defineConfig({
   test: {
     environment: "jsdom",
-    include: ["src/lib/public-api/handlers.test.ts", "src/lib/public-api/nearby.test.ts", "src/features/**/*.test.tsx", "src/lib/map/**/*.test.ts"],
+    include: [
+      "src/lib/public-api/handlers.test.ts",
+      "src/lib/public-api/nearby.test.ts",
+      "src/features/**/*.test.tsx",
+      "src/lib/map/**/*.test.ts",
+      "src/app/hospitals/**/*.test.tsx",
+    ],
     setupFiles: ["./src/test/setup.ts"],
     maxWorkers: 1,
   },
