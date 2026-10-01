@@ -21,3 +21,19 @@ class ParsedRecord:
 class ParseResult:
     record: ParsedRecord | None
     skip_reason: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class NormalizedRecord:
+    source_record_id: str
+    original_name: str
+    normalized_name: str
+    original_address: str | None
+    normalized_address: str | None
+    original_phone: str | None
+    normalized_phone: str | None
+    administrative_code: str | None
+    registration_id: str | None
+    registration_id_reliable: bool
+    campus_name: str | None
+    raw_payload: Mapping[str, object]
