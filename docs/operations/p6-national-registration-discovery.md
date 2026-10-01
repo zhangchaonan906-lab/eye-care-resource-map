@@ -9,7 +9,7 @@
 
 目标是找到政府或卫健委公开的“医疗机构执业登记信息、执业许可、机构名录、设置与执业登记”等目录，并检查官方描述是否明确包含机构名称、地址、诊疗科目。发现来源不等于已批准使用；`source_status` 不得因开放目录标注而自动变成 `APPROVED`。
 
-本阶段只做公开官方目录/文件的来源发现、字段描述比对、范围分类和人工 inspect 候选排序。未下载新文件、未导入真实数据、未跑 P3 ETL、未调用 Geocoder、未发布 facility、未访问高德 API、未修改生产代码或生产数据库。未登录平台、未绕验证码、未枚举隐藏接口。若普通公开路径要求登录、验证码、审批或遇到访问限制，停止在该页面并记录状态。
+本阶段只做公开官方目录/文件的来源发现、字段描述比对、范围分类和人工 inspect 候选排序。未下载新文件、未导入真实数据、未跑 P3 ETL、未调用 Geocoder、未发布 facility、未访问高德 API、未修改生产代码或生产数据库。既有 P6-TJ1 文件属于更早阶段取得的样本。未登录平台、未绕验证码、未枚举隐藏接口。若普通公开路径要求登录、验证码、审批或遇到访问限制，停止在该页面并记录状态。
 
 ## 方法
 
@@ -24,10 +24,11 @@
 ## 首轮结论
 
 - 本轮涉及全部 31 个省级规划单元；对其中多个地区找到具体数据目录或官方查询/公示线索。没有定位到来源不写成“没有数据源”。
-- 发现 9 项医疗机构执业登记/许可目录线索（含 1 项历史 stale 线索），其中有 6 项当前或近年官方描述同时明确名称、地址和诊疗科目：达州、广州两项、宜昌夷陵两项，以及此前已人工取得并 inspect 的天津西青区文件。
+- 发现 10 项医疗机构执业登记/许可数据集或具体目录线索（含 1 项历史 stale 线索）；天津市级真实文件详情页与西青区 2023 开放计划是两条独立来源。
+- 7 项当前/近年来源描述同时提及名称、地址和诊疗科目：达州、广州两项、宜昌夷陵两项、天津市级真实文件来源、西青区计划字段描述。西青仅有计划线索，详情页、真实文件和 schema 均未确认；另有 1 项 stale 上海历史线索。
 - 还发现宜昌市医院信息（全市、名称/地址/地区/等级，但无诊疗科目字段）、攀枝花市卫健委许可数据（许可内容可见，但地址未列）、广西卫健委分批登记公告、湖北卫健委公开查询/许可公示、山西/辽宁/吉林等官方查询入口。
 - 一项申请制来源沿用既有项目发现：浙江“二级及以上医疗机构基本信息”，尚未申请或批准。
-- 3 个候选的当前官方详情页明确列出具体文件下载类型（达州、攀枝花、宜昌市医院信息）；天津西青另有此前已取得的官方文件。广州两项在官方开放计划中列出了文件格式，但当前详情页/下载按钮尚未确认。所有新增候选均未在本阶段下载。
+- 直接文件来源/候选共 4 项：3 个当前官方详情页列出具体文件下载类型（达州、攀枝花、宜昌市医院信息），另有天津市级来源的既有真实文件已在 P6-TJ1 取得并 inspect（不是待下载项）。西青没有真实文件。广州两项在官方开放计划中列出了文件格式，但当前详情页/下载按钮尚未确认。本阶段未下载新文件。
 
 ### 31 个单元首轮发现摘要
 
@@ -45,14 +46,14 @@
 4. 宜昌市夷陵区医院信息：公开目录显示名称、类型、等级、诊疗科目、地址；先补齐具体详情页和格式。
 5. 宜昌市夷陵区诊所信息：公开目录显示名称、地址、诊疗科目；先核对其公开状态和文件格式。
 6. 宜昌市医院信息：数据详情标注全市范围和 332 条，字段含医院名称、所在地区、等级、地址；无诊疗科目，作为 B 类补充。
-7. 天津西青区医疗机构执业登记信息：先前人工文件 36 行、诊疗科目可用；仅区级样本，来源权利仍按既有 P6 结论保持 UNKNOWN。
+7. 西青区医疗机构执业登记信息（2023 开放计划线索）：计划描述提及名称、地址和诊疗科目，范围为 `district_only`；当前数据集详情页未确认，没有取得真实文件，schema 未验证。
 8. 攀枝花市医疗机构执业登记许可信息：官方文件列表、无条件开放、半年更新；未列地址字段，许可内容需 inspect 后再判断可用性。
 
 这里的次序不是质量评分；仅反映目标字段与已核实的官方元数据匹配程度及尚待确认的事实。
 
 ## 天津模式的可复制性
 
-**判断：PARTIAL。** 天津西青数据提供名称、地址、诊疗科目等字段；此前真实官方文件的 36 行中有 4 行、4 个名称存在明确眼科证据，证明“地区开放计划/卫健委登记来源 → 取得官方文件 → inspect 诊疗科目 → 基于原字段提取眼科 evidence”的流程可用。该记录仅西青区范围，且天津项目的存储、站外展示及撤回后处理等权利尚未闭合；不能据此推定各省均发布相同字段、均允许同样用途或天津全市完整覆盖。
+**判断：PARTIAL。** 天津市级详情页来源提供方为天津市卫生健康委，页面为[医疗机构执业登记信息](https://open.data.tj.gov.cn/sjj/8e3f7e670ea9492dbc480e2c68683ce5.htm)。P6-TJ1 取得并 inspect 的 36 行真实文件属于该市级来源，含 `批准时间、机构名称、地址、诊疗科目、床位数、类别、所有制形式`；4 行、4 个 distinct normalized names 有明确眼科 evidence。其 coverage 必须记为 `municipality_source_scope_unknown`：官方详情页没有证明全市完整覆盖，多区地址文本也不能证明全市覆盖。西青区是另一条独立来源，仅有 2023 开放计划线索，`district_only`；当前详情页未确认、真实文件未取得、schema 未验证，不能继承市级文件的行数、SHA 或眼科 evidence。天津来源的存储、站外展示及撤回后处置等权利尚未闭合；不能推定各省均发布相同字段或允许相同用途。
 
 ## 全国优先关键词策略
 
@@ -73,9 +74,9 @@
 ```text
 P6-N1 STATUS: READY
 Regions Searched: 31/31 (first-pass official source discovery)
-Official Registration Sources Found: 9 dataset/catalog leads, plus public query/notice trails
-Sources With Name + Address + Specialties: 6 current/recent, plus 1 stale Shanghai lead
-Sources With Direct File Download: 3 live detail pages list files; Tianjin file was obtained earlier; Guangzhou has 2 format leads only
+Official Registration Sources Found: 10 dataset/catalog leads, plus public query/notice trails
+Sources With Name + Address + Specialties: 7 current/recent source descriptions (including Xiqing plan-only field description), plus 1 stale Shanghai lead
+Sources With Direct File Download: 4 file-backed/listed sources (3 live detail pages + 1 previously obtained Tianjin municipal file; only 3 remain uninspected); Xiqing has no file; Guangzhou has 2 format leads only
 Sources Requiring Application: 1 known project lead (Zhejiang; not applied)
 Tianjin Pattern Replicable: PARTIAL
 Real Data Imported: NO
