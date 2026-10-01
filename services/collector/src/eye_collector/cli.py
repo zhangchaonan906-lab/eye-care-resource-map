@@ -67,6 +67,13 @@ def build_parser() -> argparse.ArgumentParser:
     geocode.add_argument("--limit", type=_positive_int)
     geocode.add_argument("--candidate-id", type=_candidate_id)
     geocode.add_argument("--dry-run", action="store_true")
+    pilot = commands.add_parser(
+        "pilot", help="run an explicitly bounded and approved regional pilot"
+    )
+    pilot.add_argument("--source", required=True)
+    pilot.add_argument("--region", required=True, choices=("110000", "440000"))
+    pilot.add_argument("--limit", required=True, type=_positive_int)
+    pilot.add_argument("--dry-run", action="store_true")
     return parser
 
 
@@ -100,6 +107,12 @@ def main(argv: Sequence[str] | None = None) -> int:
     geocode_repository: GeocodeRepository | None = None
     http: HttpClient | None = None
     try:
+        if args.command == "pilot":
+            if os.environ.get("PILOT_REAL_DATA") != "true":
+                raise ValueError("pilot requires explicit PILOT_REAL_DATA=true opt-in")
+            raise ValueError(
+                "P5-A source approval is incomplete; no real pilot adapter is enabled"
+            )
         if args.command == "geocode":
             geocode_config = GeocodingConfig.from_env()
             geocode_repository = GeocodeRepository.connect(geocode_config.database_url)
