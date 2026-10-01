@@ -29,4 +29,3 @@ def test_config_reads_database_and_http_settings(monkeypatch: pytest.MonkeyPatch
     assert config.database_url == "postgresql://user:pass@localhost/eye"
     assert config.http_max_attempts == 3
     assert config.http_timeout_seconds == 10
-
