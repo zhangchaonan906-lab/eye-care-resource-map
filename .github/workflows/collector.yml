@@ -29,7 +29,7 @@ jobs:
 
       - name: Run unit tests
         working-directory: services/collector
-        run: python -m pytest tests -m "not database" -q
+        run: python -m pytest tests -m "not database and not etl_database" -q
 
       - name: Lint
         working-directory: services/collector

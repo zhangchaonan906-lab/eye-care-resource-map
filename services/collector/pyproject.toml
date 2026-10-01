@@ -28,7 +28,10 @@ eye_collector = ["fixtures/**/*.json"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-ra"
-markers = ["database: requires the temporary PostGIS database"]
+markers = [
+  "database: requires the temporary PostGIS database",
+  "etl_database: requires migrated P3 data and the least-privilege ETL login",
+]
 
 [tool.ruff]
 line-length = 100
