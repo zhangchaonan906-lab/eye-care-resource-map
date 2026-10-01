@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import Link from "next/link";
 import type { NearbyFacility, PublicFacility } from "../../lib/public-api/types";
 import type { FacilityMapController, MapLocation, Viewport } from "../../lib/map/map-adapter";
 import { MIN_FACILITY_DETAIL_ZOOM } from "../../lib/public-api/types";
@@ -9,11 +10,13 @@ import { FacilityList } from "./facility-list";
 import { LocationControl } from "./location-control";
 import { MapCanvas } from "./map-canvas";
 import { SearchAndFilters, type CategoryOption } from "./search-and-filters";
+import { formatFacilityCategory } from "./facility-presentation";
 
 type ViewportState = Viewport | null;
 type LoadState = "idle" | "loading" | "ready" | "empty" | "zoom" | "too-large" | "incomplete" | "error" | "region-invalid";
 const CLIENT_FACILITY_CAP = 1200;
 const API_PAGE_SIZE = 500;
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 function isRegionCodeValid(value: string): boolean {
   return !value.trim() || /^(?:\d{2}|\d{4}|\d{6})$/.test(value.trim());
@@ -52,15 +55,20 @@ export function EyeHospitalsClient() {
   const [detailError, setDetailError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [searchResults, setSearchResults] = useState<PublicFacility[]>([]);
-  const [searchState, setSearchState] = useState<"idle" | "loading" | "ready" | "empty" | "error" | "invalid">("idle");
+  const [searchState, setSearchState] = useState<"idle" | "loading" | "loading-more" | "ready" | "empty" | "error" | "invalid">("idle");
+  const [searchNextCursor, setSearchNextCursor] = useState<string | null>(null);
+  const [searchMoreError, setSearchMoreError] = useState(false);
+  const [deepLinkNotice, setDeepLinkNotice] = useState<string | null>(null);
+  const deepLinkTargetIdRef = useRef<string | null>(null);
+  const loadMoreControllerRef = useRef<AbortController | null>(null);
   const mapControllerRef = useRef<FacilityMapController | null>(null);
 
   const labels = useMemo(() => new Map(categories.map((item) => [item.id, item.label])), [categories]);
   const mapFacilities = useMemo(() => {
     const unique = new Map<string, PublicFacility>();
-    for (const facility of [...facilities, ...nearbyFacilities]) unique.set(facility.id, facility);
+    for (const facility of [...facilities, ...nearbyFacilities, ...(detail ? [detail] : [])]) unique.set(facility.id, facility);
     return [...unique.values()];
-  }, [facilities, nearbyFacilities]);
+  }, [facilities, nearbyFacilities, detail]);
   const selectedForMap = useCallback((id: string) => {
     setSelectedId(id);
     setDetail(null);
@@ -172,8 +180,10 @@ export function EyeHospitalsClient() {
         const payload = await readJson(response);
         if (!response.ok) throw new Error(messageFrom(payload, "搜索暂时不可用"));
         const rows = Array.isArray(payload.data) ? payload.data as PublicFacility[] : [];
+        const meta = payload.meta && typeof payload.meta === "object" ? payload.meta as { nextCursor?: unknown } : {};
         if (current && !controller.signal.aborted) {
-          setSearchResults(rows);
+          setSearchResults([...new Map(rows.map((row) => [row.id, row])).values()]);
+          setSearchNextCursor(typeof meta.nextCursor === "string" && meta.nextCursor ? meta.nextCursor : null);
           setSearchState(rows.length ? "ready" : "empty");
         }
       } catch {
@@ -182,8 +192,46 @@ export function EyeHospitalsClient() {
         setSearchState("error");
       }
     }, 300);
-    return () => { current = false; window.clearTimeout(timer); controller.abort(); };
+    return () => {
+      current = false;
+      window.clearTimeout(timer);
+      controller.abort();
+      loadMoreControllerRef.current?.abort();
+      loadMoreControllerRef.current = null;
+    };
   }, [search, category, region]);
+
+  const loadMoreSearch = async () => {
+    if (!searchNextCursor || loadMoreControllerRef.current) return;
+    const controller = new AbortController();
+    loadMoreControllerRef.current = controller;
+    setSearchState("loading-more");
+    setSearchMoreError(false);
+    try {
+      const params = new URLSearchParams({ q: search.trim(), match: "prefix", limit: "20", cursor: searchNextCursor });
+      if (category) params.set("category", category);
+      if (region.trim()) params.set("region", region.trim());
+      const response = await fetch(`/api/search?${params.toString()}`, { signal: controller.signal });
+      const payload = await readJson(response);
+      if (!response.ok) throw new Error("search page failed");
+      const rows = Array.isArray(payload.data) ? payload.data as PublicFacility[] : [];
+      const meta = payload.meta && typeof payload.meta === "object" ? payload.meta as { nextCursor?: unknown } : {};
+      if (controller.signal.aborted || loadMoreControllerRef.current !== controller) return;
+      setSearchResults((current) => {
+        const byId = new Map(current.map((row) => [row.id, row]));
+        for (const row of rows) if (!byId.has(row.id)) byId.set(row.id, row);
+        return [...byId.values()];
+      });
+      setSearchNextCursor(typeof meta.nextCursor === "string" && meta.nextCursor ? meta.nextCursor : null);
+      setSearchState("ready");
+    } catch {
+      if (controller.signal.aborted || loadMoreControllerRef.current !== controller) return;
+      setSearchMoreError(true);
+      setSearchState("ready");
+    } finally {
+      if (loadMoreControllerRef.current === controller) loadMoreControllerRef.current = null;
+    }
+  };
 
   useEffect(() => {
     if (!userLocation) return;
@@ -222,6 +270,26 @@ export function EyeHospitalsClient() {
   }, [userLocation, nearbyRadius, category, nearbyRetry]);
 
   useEffect(() => {
+    let current = true;
+    void Promise.resolve().then(() => {
+      if (!current) return;
+      const params = new URLSearchParams(window.location.search);
+      const requestedId = params.get("facility");
+      if (!requestedId) return;
+      if (!UUID_PATTERN.test(requestedId)) {
+        setDeepLinkNotice("链接中的机构编号无效，仍可使用搜索或地图浏览。");
+        return;
+      }
+      deepLinkTargetIdRef.current = requestedId;
+      setSelectedId(requestedId);
+      setDetail(null);
+      setDetailError(null);
+      setDetailLoading(true);
+    });
+    return () => { current = false; };
+  }, []);
+
+  useEffect(() => {
     if (!selectedId) return;
     const controller = new AbortController();
     let current = true;
@@ -230,9 +298,22 @@ export function EyeHospitalsClient() {
       if (!response.ok) throw new Error(response.status === 404 ? "该机构详情暂不可用" : messageFrom(payload, "详情加载失败，请稍后重试"));
       return payload.data as PublicFacility;
     }).then((facility) => {
-      if (current && !controller.signal.aborted) setDetail(facility);
+      if (current && !controller.signal.aborted) {
+        setDetail(facility);
+        if (deepLinkTargetIdRef.current === facility.id) {
+          mapControllerRef.current?.flyTo(facility.longitude, facility.latitude);
+          setDeepLinkNotice(null);
+          deepLinkTargetIdRef.current = null;
+        }
+      }
     }).catch((error: unknown) => {
-      if (current && !controller.signal.aborted) setDetailError(error instanceof Error ? error.message : "详情加载失败");
+      if (!current || controller.signal.aborted) return;
+      if (deepLinkTargetIdRef.current === selectedId && error instanceof Error && error.message === "该机构详情暂不可用") {
+        setSelectedId(null);
+        setDetailError(null);
+        setDeepLinkNotice("该机构当前不可公开查看，仍可使用搜索或地图浏览。");
+        deepLinkTargetIdRef.current = null;
+      } else setDetailError(error instanceof Error ? error.message : "详情加载失败");
     }).finally(() => {
       if (current && !controller.signal.aborted) setDetailLoading(false);
     });
@@ -248,7 +329,11 @@ export function EyeHospitalsClient() {
   };
 
   const changeSearch = (value: string) => {
+    loadMoreControllerRef.current?.abort();
+    loadMoreControllerRef.current = null;
     setSearch(value);
+    setSearchNextCursor(null);
+    setSearchMoreError(false);
     if (!value.trim()) {
       setSearchResults([]);
       setSearchState("idle");
@@ -258,7 +343,11 @@ export function EyeHospitalsClient() {
     }
   };
   const changeCategory = (value: string) => {
+    loadMoreControllerRef.current?.abort();
+    loadMoreControllerRef.current = null;
     setCategory(value);
+    setSearchNextCursor(null);
+    setSearchMoreError(false);
     if (viewport && viewport.zoom >= MIN_FACILITY_DETAIL_ZOOM) {
       setFacilities([]);
       setLoadState("loading");
@@ -270,7 +359,11 @@ export function EyeHospitalsClient() {
     }
   };
   const changeRegion = (value: string) => {
+    loadMoreControllerRef.current?.abort();
+    loadMoreControllerRef.current = null;
     setRegion(value);
+    setSearchNextCursor(null);
+    setSearchMoreError(false);
     clearSelection();
     if (!isRegionCodeValid(value)) {
       setFacilities([]);
@@ -314,13 +407,25 @@ export function EyeHospitalsClient() {
           <SearchAndFilters categories={categories} category={category} region={region} search={search} onCategoryChange={changeCategory} onRegionChange={changeRegion} onSearchChange={changeSearch} />
           {search.trim() && <section className="eye-map__search-results" aria-label="搜索结果" aria-live="polite">
             {searchState === "loading" && <p>正在搜索…</p>}
+            {searchState === "loading-more" && <p role="status">正在加载更多结果…</p>}
             {searchState === "empty" && <p>没有找到匹配的机构</p>}
             {searchState === "error" && <p role="alert">搜索暂时不可用，请稍后重试</p>}
             {searchState === "invalid" && <p role="alert">地区代码需为 2、4 或 6 位数字</p>}
-            {searchResults.map((facility) => <button key={facility.id} type="button" className="eye-map__search-result" onClick={() => selectFacility(facility)}>
-              <strong>{facility.name}</strong><span>{facility.address}</span><span>{facility.region.name}</span>
-            </button>)}
+            {searchMoreError && <p role="alert">更多结果加载失败，请重试</p>}
+            {searchResults.map((facility) => <article className="eye-map__search-result-card" key={facility.id}>
+              <button type="button" className="eye-map__search-result" onClick={() => selectFacility(facility)}>
+                <strong>{facility.name}</strong>
+                <span>{formatFacilityCategory(facility.category, labels)}</span>
+                <span>{facility.region.name}</span>
+                <span>{facility.address}</span>
+              </button>
+              <Link href={`/hospitals/${facility.id}`} aria-label={`查看${facility.name}详情`}>详情</Link>
+            </article>)}
+            {searchNextCursor && <button type="button" onClick={() => void loadMoreSearch()} disabled={searchState === "loading-more"}>
+              {searchMoreError ? "重试加载更多" : "加载更多搜索结果"}
+            </button>}
           </section>}
+          {deepLinkNotice && <p role="status" className="eye-map__deep-link-notice">{deepLinkNotice}</p>}
           <div className="eye-map__status" aria-live="polite">
             {statusMessage && <p role={loadState === "error" ? "alert" : "status"}>{statusMessage}</p>}
             {basemapError && <p role="alert">地图画布加载失败；机构列表仍可使用。</p>}
