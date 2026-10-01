@@ -7,11 +7,16 @@ import os
 import sys
 from collections.abc import Sequence
 from typing import cast
+from uuid import UUID
 
 from eye_collector.config import CollectorConfig
 from eye_collector.db import PostgresRepository
 from eye_collector.etl.pipeline import Pipeline
 from eye_collector.etl.repository import ETLRepository
+from eye_collector.geocoding.config import GeocodingConfig
+from eye_collector.geocoding.pipeline import GeocodingPipeline
+from eye_collector.geocoding.providers.fixture import FixtureGeocoder, FixtureGeocodeTransport
+from eye_collector.geocoding.repository import GeocodeRepository
 from eye_collector.http import HttpClient
 from eye_collector.logging_utils import JsonLogFormatter, safe_error_summary
 from eye_collector.models import ImportResult
@@ -35,6 +40,13 @@ def _positive_int(value: str) -> int:
     return parsed
 
 
+def _candidate_id(value: str) -> str:
+    try:
+        return str(UUID(value))
+    except ValueError as error:
+        raise argparse.ArgumentTypeError("candidate-id must be a UUID") from error
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="eye-collector")
     commands = parser.add_subparsers(dest="command", required=True)
@@ -48,6 +60,13 @@ def build_parser() -> argparse.ArgumentParser:
         "process", help="process approved source snapshots through P3 ETL"
     )
     process.add_argument("--limit", type=_positive_int)
+    geocode = commands.add_parser(
+        "geocode", help="geocode candidate records using the offline fixture provider"
+    )
+    geocode.add_argument("--provider", required=True, choices=("fixture",))
+    geocode.add_argument("--limit", type=_positive_int)
+    geocode.add_argument("--candidate-id", type=_candidate_id)
+    geocode.add_argument("--dry-run", action="store_true")
     return parser
 
 
@@ -78,8 +97,39 @@ def main(argv: Sequence[str] | None = None) -> int:
     _configure_logging()
     repository: PostgresRepository | None = None
     etl_repository: ETLRepository | None = None
+    geocode_repository: GeocodeRepository | None = None
     http: HttpClient | None = None
     try:
+        if args.command == "geocode":
+            geocode_config = GeocodingConfig.from_env()
+            geocode_repository = GeocodeRepository.connect(geocode_config.database_url)
+            policy = geocode_repository.approved_policy("fixture", "fixture-v1")
+            http = HttpClient(
+                timeout_seconds=geocode_config.http_timeout_seconds,
+                max_response_bytes=geocode_config.http_max_response_bytes,
+                max_attempts=geocode_config.http_max_attempts,
+                backoff_base_seconds=geocode_config.http_backoff_base_seconds,
+                user_agent=geocode_config.http_user_agent,
+                transport=FixtureGeocodeTransport(),
+            )
+            provider = FixtureGeocoder(http, policy=policy)
+            geocode_stats = GeocodingPipeline(geocode_repository, provider).run(
+                limit=args.limit,
+                candidate_record_id=args.candidate_id,
+                dry_run=args.dry_run,
+            )
+            print(
+                json.dumps(
+                    {
+                        "dry_run": args.dry_run,
+                        "provider": args.provider,
+                        "counts": geocode_stats.as_dict(),
+                    },
+                    ensure_ascii=False,
+                    separators=(",", ":"),
+                )
+            )
+            return 0 if geocode_stats.errors == 0 else 1
         if args.command == "process":
             etl_database_url = os.environ.get("ETL_DATABASE_URL")
             if not etl_database_url:
@@ -127,6 +177,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             repository.close()
         if etl_repository is not None:
             etl_repository.close()
+        if geocode_repository is not None:
+            geocode_repository.close()
 
 
 if __name__ == "__main__":

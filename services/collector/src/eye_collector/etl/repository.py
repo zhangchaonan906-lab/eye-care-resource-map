@@ -16,7 +16,7 @@ from eye_collector.etl.models import (
     SourceSnapshot,
 )
 
-_PIPELINE_VERSION = "p3.1"
+_PIPELINE_VERSION = "p3.2"
 _EVIDENCE_RULE_VERSION = "ophthalmology-explicit-fields-v1"
 
 
@@ -52,10 +52,15 @@ class ETLRepository:
                 SELECT 1 FROM app_private.candidate_records cr
                 WHERE cr.source_record_id = sr.id
               )
+              AND NOT EXISTS (
+                SELECT 1 FROM app_private.etl_source_dispositions d
+                WHERE d.source_record_id = sr.id
+                  AND d.pipeline_version = %s
+              )
             ORDER BY sr.collected_at, sr.id
             LIMIT %s
             """,
-            (limit,),
+            (_PIPELINE_VERSION, limit),
         ).fetchall()
         return [
             SourceSnapshot(str(row[0]), row[1], bool(row[2]))
@@ -75,7 +80,10 @@ class ETLRepository:
         ).fetchone()
         return int(row[0]) if row is not None else 0
 
-    def facility_targets(self) -> list[FacilityTarget]:
+    def facility_targets_for(self, candidate: NormalizedRecord) -> list[FacilityTarget]:
+        registration_id = (
+            candidate.registration_id if candidate.registration_id_reliable else None
+        )
         rows = self._connection.execute(
             """
             SELECT f.id::text, f.name, f.campus_name, r.adcode, o.registration_id
@@ -83,8 +91,19 @@ class ETLRepository:
             JOIN app_private.regions r ON r.id = f.region_id
             LEFT JOIN app_private.organizations o ON o.id = f.organization_id
             WHERE f.verification_status <> 'withdrawn'
+              AND (
+                (o.registration_id = %s AND %s::text IS NOT NULL)
+                OR (r.adcode = %s AND f.normalized_name = %s)
+              )
             ORDER BY f.id
             """
+            ,
+            (
+                registration_id,
+                registration_id,
+                candidate.administrative_code,
+                candidate.normalized_name,
+            ),
         ).fetchall()
         return [
             FacilityTarget(
@@ -96,6 +115,20 @@ class ETLRepository:
             )
             for row in rows
         ]
+
+    def record_terminal_skip(self, source_record_id: str, reason_code: str) -> None:
+        if reason_code != "missing_name":
+            raise ValueError("unsupported terminal skip reason")
+        self._connection.execute(
+            """
+            INSERT INTO app_private.etl_source_dispositions (
+              source_record_id, pipeline_version, disposition, reason_code
+            )
+            VALUES (%s, %s, %s, %s)
+            ON CONFLICT (source_record_id, pipeline_version) DO NOTHING
+            """,
+            (source_record_id, _PIPELINE_VERSION, "terminal_skip", reason_code),
+        )
 
     def find_duplicate_candidate_ids(
         self, key: tuple[str, ...], *, exclude_candidate_id: str

@@ -31,7 +31,9 @@ class PipelineRepository(Protocol):
         evidence: tuple[OphthalmologyEvidence, ...],
     ) -> str | None: ...
 
-    def facility_targets(self) -> list[FacilityTarget]: ...
+    def facility_targets_for(self, candidate: NormalizedRecord) -> list[FacilityTarget]: ...
+
+    def record_terminal_skip(self, source_record_id: str, reason_code: str) -> None: ...
 
     def update_match(
         self, candidate_id: str, status: str, facility_id: str | None
@@ -102,6 +104,10 @@ class Pipeline:
             registration_id_reliable=snapshot.registration_id_reliable,
         )
         if parsed.record is None:
+            with self._repository.atomic():
+                self._repository.record_terminal_skip(
+                    snapshot.source_record_id, parsed.skip_reason or "missing_name"
+                )
             counts["skipped"] += 1
             return None
 
@@ -117,7 +123,9 @@ class Pipeline:
                 counts["already_processed"] += 1
                 return None
 
-            match = match_facility(normalized, self._repository.facility_targets())
+            match = match_facility(
+                normalized, self._repository.facility_targets_for(normalized)
+            )
             key = duplicate_key(normalized)
             if key is not None:
                 existing_ids = self._repository.find_duplicate_candidate_ids(

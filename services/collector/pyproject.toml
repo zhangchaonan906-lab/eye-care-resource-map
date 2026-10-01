@@ -31,6 +31,7 @@ addopts = "-ra"
 markers = [
   "database: requires the temporary PostGIS database",
   "etl_database: requires migrated P3 data and the least-privilege ETL login",
+  "geocode_database: requires migrated P4 data and the least-privilege geocoder login",
 ]
 
 [tool.ruff]
