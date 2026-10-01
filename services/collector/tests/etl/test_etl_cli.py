@@ -15,6 +15,13 @@ def test_process_command_accepts_limit() -> None:
     assert args.limit == 5
 
 
+def test_process_command_accepts_import_run_id() -> None:
+    run_id = "b0a6264e-e125-4bbd-bf93-3da5ad8f13a1"
+    args = build_parser().parse_args(["process", "--import-run-id", run_id])
+
+    assert args.import_run_id == run_id
+
+
 def test_process_command_uses_etl_login_and_emits_structured_stats(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -22,8 +29,14 @@ def test_process_command_uses_etl_login_and_emits_structured_stats(
         def __init__(self, repository: object) -> None:
             assert isinstance(repository, FakeRepository)
 
-        def run(self, *, limit: int | None = None) -> PipelineStats:
+        def run(
+            self,
+            *,
+            limit: int | None = None,
+            import_run_id: str | None = None,
+        ) -> PipelineStats:
             assert limit == 2
+            assert import_run_id is None
             return PipelineStats(source_records_read=3, candidates_created=3)
 
     class FakeRepository:

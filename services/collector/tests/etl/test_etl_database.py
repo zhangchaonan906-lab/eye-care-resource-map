@@ -298,3 +298,94 @@ def test_p5_placeholder_evidence_and_duplicate_snapshots_stay_in_review_staging(
     assert placeholder_candidates == 0
     assert evidence == ("hospital_description", "设有眼科门诊。")
     assert duplicate_count == 2
+
+
+def test_manual_only_import_run_is_processed_only_when_explicitly_scoped() -> None:
+    admin_url = _url("DATABASE_ADMIN_URL")
+    etl_url = _url("ETL_DATABASE_URL")
+    with psycopg.connect(admin_url, autocommit=True) as admin:
+        source = admin.execute(
+            """
+            SELECT id, url, access_policy, status
+            FROM app_private.source_catalog WHERE name = 'P5 ETL Scope Synthetic'
+            """
+        ).fetchone()
+        if source is None:
+            source = admin.execute(
+                """
+                INSERT INTO app_private.source_catalog (
+                  name, url, use_basis, permitted_fields, access_policy, status,
+                  reviewed_at, registration_id_reliable
+                ) VALUES (
+                  'P5 ETL Scope Synthetic', 'https://fixture.invalid/p5-etl-scope',
+                  'Synthetic integration test only', ARRAY['name', 'address'],
+                  'manual_only', 'approved', now(), false
+                ) RETURNING id, url, access_policy, status
+                """
+            ).fetchone()
+        source_id, source_url, access_policy, status = source
+        assert (access_policy, status) == ("manual_only", "approved")
+        run_id = admin.execute(
+            """
+            INSERT INTO app_private.import_runs (source_id, region_code, status, ended_at)
+            VALUES (%s, '110000', 'succeeded', now()) RETURNING id::text
+            """,
+            (source_id,),
+        ).fetchone()[0]
+        payload = {
+            "name": "P5 scoped ETL synthetic hospital",
+            "address": "Synthetic Road 1",
+            "administrative_code": "110105",
+            "registration_id": "P5-ETL-SCOPE-001",
+        }
+        source_record_id = admin.execute(
+            """
+            INSERT INTO app_private.source_records (
+              source_id, source_key, raw_payload, source_url, content_hash, import_run_id
+            ) VALUES (%s, %s, %s, %s, %s, %s) RETURNING id::text
+            """,
+            (
+                source_id,
+                "p5-etl-scope-synthetic-001",
+                psycopg.types.json.Jsonb(payload),
+                source_url,
+                canonical_sha256(payload),
+                run_id,
+            ),
+        ).fetchone()[0]
+
+    repository = ETLRepository.connect(etl_url)
+    try:
+        Pipeline(repository).run()
+        with psycopg.connect(admin_url, autocommit=True) as admin:
+            assert admin.execute(
+                "SELECT count(*) FROM app_private.candidate_records WHERE source_record_id = %s",
+                (source_record_id,),
+            ).fetchone()[0] == 0
+
+        scoped_stats = Pipeline(repository).run(import_run_id=run_id)
+        replay_stats = Pipeline(repository).run(import_run_id=run_id)
+    finally:
+        repository.close()
+
+    assert scoped_stats.source_records_read == 1
+    assert scoped_stats.candidates_created == 1
+    assert scoped_stats.errors == 0
+    assert replay_stats.source_records_read == 0
+    assert replay_stats.candidates_created == 0
+    assert replay_stats.already_processed == 1
+    with psycopg.connect(etl_url, autocommit=True) as etl:
+        assert etl.execute("SELECT current_user").fetchone() == ("eye_etl_runtime",)
+        with pytest.raises(psycopg.errors.InsufficientPrivilege):
+            etl.execute("SELECT file_sha256 FROM app_private.import_runs LIMIT 1")
+    with psycopg.connect(admin_url, autocommit=True) as admin:
+        candidate = admin.execute(
+            """
+            SELECT cr.source_record_id::text, cr.match_status, sr.raw_payload
+            FROM app_private.candidate_records cr
+            JOIN app_private.source_records sr ON sr.id = cr.source_record_id
+            WHERE cr.source_record_id = %s
+            """,
+            (source_record_id,),
+        ).fetchone()
+    assert candidate == (source_record_id, "unmatched", payload)

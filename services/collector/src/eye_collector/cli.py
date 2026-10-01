@@ -65,6 +65,13 @@ def _candidate_id(value: str) -> str:
         raise argparse.ArgumentTypeError("candidate-id must be a UUID") from error
 
 
+def _import_run_id(value: str) -> str:
+    try:
+        return str(UUID(value))
+    except ValueError as error:
+        raise argparse.ArgumentTypeError("import-run-id must be a UUID") from error
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="eye-collector")
     commands = parser.add_subparsers(dest="command", required=True)
@@ -84,6 +91,11 @@ def build_parser() -> argparse.ArgumentParser:
         "process", help="process approved source snapshots through P3 ETL"
     )
     process.add_argument("--limit", type=_positive_int)
+    process.add_argument(
+        "--import-run-id",
+        type=_import_run_id,
+        help="restrict ETL to one succeeded manual_only import batch",
+    )
     geocode = commands.add_parser(
         "geocode", help="geocode candidate records using the offline fixture provider"
     )
@@ -279,7 +291,9 @@ def main(argv: Sequence[str] | None = None) -> int:
             if not etl_database_url:
                 raise ValueError("ETL_DATABASE_URL is required for process")
             etl_repository = ETLRepository.connect(etl_database_url)
-            stats = Pipeline(etl_repository).run(limit=args.limit)
+            stats = Pipeline(etl_repository).run(
+                limit=args.limit, import_run_id=args.import_run_id
+            )
             print(json.dumps(stats.as_dict(), ensure_ascii=False, separators=(",", ":")))
             return 0 if stats.errors == 0 else 1
         if args.source != "fixture":
