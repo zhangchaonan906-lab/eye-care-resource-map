@@ -17,9 +17,14 @@ try {
     docker compose -p $projectName exec -T db psql -U eye -d eye -v ON_ERROR_STOP=1 -f $sqlFile
     if ($LASTEXITCODE -ne 0) { throw "SQL failed: $sqlFile" }
   }
-  Write-Host 'P1 database checks passed.'
 }
 finally {
-  docker compose -p $projectName down --volumes
-  Pop-Location
+  try {
+    docker compose -p $projectName down --volumes
+    if ($LASTEXITCODE -ne 0) { throw 'Docker database cleanup failed.' }
+  }
+  finally {
+    Pop-Location
+  }
 }
+Write-Host 'P1 database checks passed.'
