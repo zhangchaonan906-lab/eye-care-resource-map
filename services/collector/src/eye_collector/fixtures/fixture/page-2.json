@@ -1,0 +1,10 @@
+{
+  "records": [
+    {"source_key": "clinic-003", "source_url": "https://fixture.invalid/facilities/clinic-003", "raw_payload": {"name": "样例眼科门诊三", "address": "北京市西城区样例路3号", "region": "110000", "updated_at": "2026-09-01"}},
+    {"source_key": "clinic-004", "source_url": "https://fixture.invalid/facilities/clinic-004", "raw_payload": {"name": "样例眼科门诊四", "address": "北京市东城区样例路4号", "region": "110000", "updated_at": "2026-09-02"}},
+    {"source_key": "clinic-005", "source_url": "https://fixture.invalid/facilities/clinic-005", "raw_payload": {"name": "样例眼科门诊五", "address": "北京市丰台区样例路5号", "region": "110000", "updated_at": "2026-09-02"}},
+    {"source_key": "clinic-006", "source_url": "https://fixture.invalid/facilities/clinic-006", "raw_payload": {"name": "样例眼科门诊六", "address": "北京市通州区样例路6号", "region": "110000", "updated_at": "2026-09-03"}},
+    {"source_key": "clinic-007", "source_url": "https://fixture.invalid/facilities/clinic-007", "raw_payload": {"name": "样例眼科门诊七", "address": "北京市昌平区样例路7号", "region": "110000", "updated_at": "2026-09-03"}}
+  ],
+  "next_cursor": null
+}
