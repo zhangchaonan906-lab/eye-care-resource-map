@@ -162,6 +162,26 @@ def test_pipeline_counts_invalid_and_previously_processed_snapshots() -> None:
     assert repository.dispositions == [("bad-name", "missing_name")]
 
 
+def test_pipeline_emits_checkpoints_around_snapshot_processing() -> None:
+    repository = Repository(
+        [snapshot("one", {"name": "第一医院"}), snapshot("two", {"name": "第二医院"})]
+    )
+    checkpoints: list[int] = []
+
+    Pipeline(repository).run(on_checkpoint=lambda: checkpoints.append(len(repository.created)))
+
+    assert checkpoints == [0, 1, 2]
+
+
+def test_pipeline_checkpoint_failure_propagates_for_worker_lease_safety() -> None:
+    repository = Repository([snapshot("one", {"name": "第一医院"})])
+
+    with pytest.raises(RuntimeError, match="lease heartbeat failed"):
+        Pipeline(repository).run(
+            on_checkpoint=lambda: (_ for _ in ()).throw(RuntimeError("lease heartbeat failed"))
+        )
+
+
 @pytest.mark.parametrize("placeholder", ["-", "—"])
 def test_placeholder_names_are_terminally_skipped_without_removing_raw_snapshot(
     placeholder: str,

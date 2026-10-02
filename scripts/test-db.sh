@@ -14,12 +14,14 @@ etl_password="$(python3 -c 'import secrets; print(secrets.token_hex(32))')"
 geocode_password="$(python3 -c 'import secrets; print(secrets.token_hex(32))')"
 public_api_password="$(python3 -c 'import secrets; print(secrets.token_hex(32))')"
 admin_review_password="$(python3 -c 'import secrets; print(secrets.token_hex(32))')"
+sync_worker_password="$(python3 -c 'import secrets; print(secrets.token_hex(32))')"
 export DATABASE_URL="postgresql://eye_collector_runtime:${collector_password}@127.0.0.1:${EYE_MAP_DB_PORT}/eye"
 export ETL_DATABASE_URL="postgresql://eye_etl_runtime:${etl_password}@127.0.0.1:${EYE_MAP_DB_PORT}/eye"
 export DATABASE_ADMIN_URL="postgresql://eye:${EYE_MAP_POSTGRES_PASSWORD}@127.0.0.1:${EYE_MAP_DB_PORT}/eye"
 export GEOCODE_DATABASE_URL="postgresql://eye_geocode_runtime:${geocode_password}@127.0.0.1:${EYE_MAP_DB_PORT}/eye"
 export PUBLIC_API_DATABASE_URL="postgresql://eye_public_api_runtime:${public_api_password}@127.0.0.1:${EYE_MAP_DB_PORT}/eye"
 export ADMIN_DATABASE_URL="postgresql://eye_admin_review_runtime:${admin_review_password}@127.0.0.1:${EYE_MAP_DB_PORT}/eye"
+export SYNC_DATABASE_URL="postgresql://eye_sync_worker_runtime:${sync_worker_password}@127.0.0.1:${EYE_MAP_DB_PORT}/eye"
 
 compose() {
   docker compose -p "$project_name" "$@"
@@ -65,7 +67,10 @@ compose exec -T db psql -h 127.0.0.1 -U eye -d eye -v ON_ERROR_STOP=1 \
   -f /workspace/db/migrations/012_nearby_api.sql
 compose exec -T db psql -h 127.0.0.1 -U eye -d eye -v ON_ERROR_STOP=1 \
   -f /workspace/db/migrations/013_admin_review.sql
+compose exec -T db psql -h 127.0.0.1 -U eye -d eye -v ON_ERROR_STOP=1 \
+  -f /workspace/db/migrations/014_incremental_sync.sql
 compose exec -T db psql -h 127.0.0.1 -U eye -d eye -v ON_ERROR_STOP=1 -v admin_password="$admin_review_password" -f /workspace/scripts/provision-admin-review-login.sql
+compose exec -T db psql -h 127.0.0.1 -U eye -d eye -v ON_ERROR_STOP=1 -v sync_password="$sync_worker_password" -f /workspace/scripts/provision-sync-worker-login.sql
 
 for sql_file in \
   /workspace/db/tests/001_core.sql \
@@ -94,6 +99,8 @@ compose exec -T db psql -h 127.0.0.1 -U eye -d eye -v ON_ERROR_STOP=1 \
   -v api_password="$public_api_password" -f /workspace/scripts/provision-public-api-login.sql
 compose exec -T db psql -h 127.0.0.1 -U eye -d eye -v ON_ERROR_STOP=1 \
   -f /workspace/scripts/seed-fixture-source.sql
+compose exec -T db psql -h 127.0.0.1 -U eye -d eye -v ON_ERROR_STOP=1 \
+  -f /workspace/db/tests/014_incremental_sync.sql
 
 cd "$repo_root/services/collector"
 cli_result="$(python3 -m eye_collector.cli run --source fixture --region 110000 --dry-run --limit 1)"

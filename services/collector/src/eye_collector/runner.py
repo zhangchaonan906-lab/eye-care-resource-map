@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable
 from dataclasses import replace
 from typing import Protocol
 
+from eye_collector.changes import ChangeType
 from eye_collector.hashing import canonical_sha256
 from eye_collector.logging_utils import safe_error_summary
 from eye_collector.models import (
@@ -11,6 +13,7 @@ from eye_collector.models import (
     ImportCounts,
     ImportResult,
     RawRecord,
+    SnapshotWriteResult,
     SourceDescriptor,
     SourceRegistration,
 )
@@ -34,11 +37,13 @@ class CollectorRepository(Protocol):
         provenance: FileImportProvenance,
     ) -> tuple[str, SourceRegistration]: ...
 
-    def snapshot_exists(self, source_id: str, record: RawRecord, content_hash: str) -> bool: ...
+    def preview_snapshot(
+        self, source_id: str, record: RawRecord, content_hash: str
+    ) -> SnapshotWriteResult: ...
 
     def insert_snapshot(
         self, run_id: str, source_id: str, record: RawRecord, content_hash: str
-    ) -> bool: ...
+    ) -> SnapshotWriteResult: ...
 
     def finish_run(
         self,
@@ -71,6 +76,7 @@ class CollectorRunner:
         *,
         limit: int | None = None,
         dry_run: bool = False,
+        on_page_boundary: Callable[[str], None] | None = None,
     ) -> ImportResult:
         if len(region_code) != 6 or not region_code.isdigit():
             raise ValueError("region_code must contain six digits")
@@ -81,6 +87,18 @@ class CollectorRunner:
         counts = ImportCounts()
         requested_records = 0
         seen_in_run: set[tuple[str, str]] = set()
+        seen_keys_in_run: set[str] = set()
+
+        def count_snapshot(result: SnapshotWriteResult) -> None:
+            nonlocal counts
+            if result.change_type is ChangeType.UNCHANGED:
+                counts = replace(counts, unchanged=counts.unchanged + 1)
+            elif result.change_type is ChangeType.NEW:
+                counts = replace(counts, inserted=counts.inserted + 1, new=counts.new + 1)
+            else:
+                counts = replace(
+                    counts, inserted=counts.inserted + 1, changed=counts.changed + 1
+                )
 
         def count_request() -> None:
             nonlocal counts
@@ -121,19 +139,29 @@ class CollectorRunner:
                     content_hash = canonical_sha256(record.raw_payload)
                     marker = (record.source_key, content_hash)
                     if dry_run:
-                        if marker in seen_in_run or self._repository.snapshot_exists(
-                            registration.id, record, content_hash
-                        ):
-                            counts = replace(counts, unchanged=counts.unchanged + 1)
+                        if marker in seen_in_run:
+                            preview = SnapshotWriteResult(ChangeType.UNCHANGED)
                         else:
-                            counts = replace(counts, inserted=counts.inserted + 1)
+                            preview = self._repository.preview_snapshot(
+                                registration.id, record, content_hash
+                            )
+                            if (
+                                preview.change_type is ChangeType.NEW
+                                and record.source_key in seen_keys_in_run
+                            ):
+                                preview = replace(preview, change_type=ChangeType.CHANGED)
                             seen_in_run.add(marker)
-                    elif self._repository.insert_snapshot(
-                        run_id, registration.id, record, content_hash
-                    ):
-                        counts = replace(counts, inserted=counts.inserted + 1)
+                            seen_keys_in_run.add(record.source_key)
+                        count_snapshot(preview)
                     else:
-                        counts = replace(counts, unchanged=counts.unchanged + 1)
+                        count_snapshot(
+                            self._repository.insert_snapshot(
+                                run_id, registration.id, record, content_hash
+                            )
+                        )
+
+                if on_page_boundary is not None:
+                    on_page_boundary(run_id)
 
                 if limit is not None and requested_records >= limit:
                     break
@@ -177,7 +205,7 @@ class CollectorRunner:
                 source_key=descriptor.source_key,
                 error=summary,
             )
-            return ImportResult(run_id, "failed", counts, dry_run)
+            return ImportResult(run_id, "failed", counts, dry_run, summary, type(error).__name__)
 
     def _log(self, level: int, event: str, **fields: object) -> None:
         self._logger.log(level, event, extra={"event": event, **fields})

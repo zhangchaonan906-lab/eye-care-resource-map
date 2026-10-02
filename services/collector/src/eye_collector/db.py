@@ -6,10 +6,12 @@ import psycopg
 from psycopg.rows import tuple_row
 from psycopg.types.json import Jsonb
 
+from eye_collector.changes import ChangeType, changed_json_paths
 from eye_collector.exceptions import SourcePolicyError
 from eye_collector.models import (
     FileImportProvenance,
     RawRecord,
+    SnapshotWriteResult,
     SourceDescriptor,
     SourceRegistration,
 )
@@ -174,15 +176,31 @@ class PostgresRepository:
             pilot_group_record_count=int(row[10]),
         )
 
-    def snapshot_exists(self, source_id: str, record: RawRecord, content_hash: str) -> bool:
-        row = self._connection.execute(
-            """
-            SELECT 1 FROM app_private.source_records
-            WHERE source_id = %s AND source_key = %s AND content_hash = %s
-            """,
+    def preview_snapshot(
+        self, source_id: str, record: RawRecord, content_hash: str
+    ) -> SnapshotWriteResult:
+        exact = self._connection.execute(
+            """SELECT id::text FROM app_private.source_records
+               WHERE source_id=%s AND source_key=%s AND content_hash=%s""",
             (source_id, record.source_key, content_hash),
         ).fetchone()
-        return row is not None
+        if exact is not None:
+            return SnapshotWriteResult(ChangeType.UNCHANGED, source_record_id=str(exact[0]))
+        previous = self._connection.execute(
+            """SELECT id::text, raw_payload FROM app_private.source_records
+               WHERE source_id=%s AND source_key=%s
+               ORDER BY collected_at DESC, id DESC LIMIT 1""",
+            (source_id, record.source_key),
+        ).fetchone()
+        if previous is None:
+            return SnapshotWriteResult(ChangeType.NEW)
+        paths, truncated = changed_json_paths(previous[1], record.raw_payload)
+        return SnapshotWriteResult(
+            ChangeType.CHANGED,
+            previous_source_record_id=str(previous[0]),
+            changed_paths=paths,
+            diff_truncated=truncated,
+        )
 
     def insert_snapshot(
         self,
@@ -190,25 +208,67 @@ class PostgresRepository:
         source_id: str,
         record: RawRecord,
         content_hash: str,
-    ) -> bool:
-        row = self._connection.execute(
-            """
-            INSERT INTO app_private.source_records
-              (source_id, source_key, raw_payload, source_url, content_hash, import_run_id)
-            VALUES (%s, %s, %s, %s, %s, %s)
-            ON CONFLICT (source_id, source_key, content_hash) DO NOTHING
-            RETURNING id
-            """,
-            (
-                source_id,
-                record.source_key,
-                Jsonb(record.raw_payload),
-                record.source_url,
-                content_hash,
-                run_id,
-            ),
-        ).fetchone()
-        return row is not None
+    ) -> SnapshotWriteResult:
+        with self._connection.transaction():
+            # Serialize classifications even when this is the first row for a key.
+            self._connection.execute(
+                "SELECT pg_advisory_xact_lock(hashtextextended(%s, 0))",
+                (f"{source_id}:{record.source_key}",),
+            )
+            preview = self.preview_snapshot(source_id, record, content_hash)
+            if preview.change_type is ChangeType.UNCHANGED:
+                return preview
+            row = self._connection.execute(
+                """
+                INSERT INTO app_private.source_records
+                  (source_id, source_key, raw_payload, source_url, content_hash, import_run_id)
+                VALUES (%s, %s, %s, %s, %s, %s)
+                ON CONFLICT (source_id, source_key, content_hash) DO NOTHING
+                RETURNING id::text
+                """,
+                (
+                    source_id,
+                    record.source_key,
+                    Jsonb(record.raw_payload),
+                    record.source_url,
+                    content_hash,
+                    run_id,
+                ),
+            ).fetchone()
+            if row is None:
+                exact = self._connection.execute(
+                    """SELECT id::text FROM app_private.source_records
+                       WHERE source_id=%s AND source_key=%s AND content_hash=%s""",
+                    (source_id, record.source_key, content_hash),
+                ).fetchone()
+                if exact is None:
+                    raise RuntimeError("snapshot conflict did not resolve to an existing row")
+                return SnapshotWriteResult(ChangeType.UNCHANGED, source_record_id=str(exact[0]))
+
+            source_record_id = str(row[0])
+            self._connection.execute(
+                """INSERT INTO app_private.source_change_events (
+                     source_id, source_key, change_type, previous_source_record_id,
+                     source_record_id, import_run_id, changed_paths, diff_truncated
+                   ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s)""",
+                (
+                    source_id,
+                    record.source_key,
+                    preview.change_type.value,
+                    preview.previous_source_record_id,
+                    source_record_id,
+                    run_id,
+                    list(preview.changed_paths),
+                    preview.diff_truncated,
+                ),
+            )
+            return SnapshotWriteResult(
+                preview.change_type,
+                source_record_id,
+                preview.previous_source_record_id,
+                preview.changed_paths,
+                preview.diff_truncated,
+            )
 
     def finish_run(
         self,

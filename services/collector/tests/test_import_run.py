@@ -6,11 +6,13 @@ from pathlib import Path
 
 import pytest
 
+from eye_collector.changes import ChangeType, changed_json_paths
 from eye_collector.exceptions import SourcePolicyError
 from eye_collector.hashing import canonical_sha256
 from eye_collector.models import (
     ImportCounts,
     RawRecord,
+    SnapshotWriteResult,
     SourceDescriptor,
     SourcePage,
     SourceRegistration,
@@ -53,7 +55,7 @@ class MemoryRepository:
         self.terminal_error = terminal_error
         self.started = 0
         self.finished: list[tuple[str, ImportCounts, str | None]] = []
-        self.snapshots: set[tuple[str, str, str]] = set()
+        self.snapshots: dict[tuple[str, str, str], tuple[str, dict[str, object]]] = {}
         self.writes = 0
 
     def start_approved_run(
@@ -66,15 +68,41 @@ class MemoryRepository:
     def snapshot_exists(self, source_id: str, record: RawRecord, content_hash: str) -> bool:
         return (source_id, record.source_key, content_hash) in self.snapshots
 
+    def preview_snapshot(
+        self, source_id: str, record: RawRecord, content_hash: str
+    ) -> SnapshotWriteResult:
+        exact = self.snapshots.get((source_id, record.source_key, content_hash))
+        if exact:
+            return SnapshotWriteResult(ChangeType.UNCHANGED, exact[0])
+        previous = [
+            value
+            for (saved_source, saved_key, _), value in self.snapshots.items()
+            if saved_source == source_id and saved_key == record.source_key
+        ]
+        if not previous:
+            return SnapshotWriteResult(ChangeType.NEW)
+        previous_id, previous_payload = previous[-1]
+        paths, truncated = changed_json_paths(previous_payload, record.raw_payload)
+        return SnapshotWriteResult(ChangeType.CHANGED, previous_source_record_id=previous_id,
+                                  changed_paths=paths, diff_truncated=truncated)
+
     def insert_snapshot(
         self, run_id: str, source_id: str, record: RawRecord, content_hash: str
-    ) -> bool:
+    ) -> SnapshotWriteResult:
         item = (source_id, record.source_key, content_hash)
         if item in self.snapshots:
-            return False
-        self.snapshots.add(item)
+            return SnapshotWriteResult(ChangeType.UNCHANGED, self.snapshots[item][0])
+        preview = self.preview_snapshot(source_id, record, content_hash)
+        record_id = f"source-record-{self.writes + 1}"
+        self.snapshots[item] = (record_id, record.raw_payload)
         self.writes += 1
-        return True
+        return SnapshotWriteResult(
+            preview.change_type,
+            record_id,
+            preview.previous_source_record_id,
+            preview.changed_paths,
+            preview.diff_truncated,
+        )
 
     def finish_run(
         self, run_id: str, status: str, counts: dict[str, int], error_summary: str | None = None
@@ -116,7 +144,9 @@ def test_import_run_records_pages_records_and_idempotent_snapshots(
     result = CollectorRunner(repository, adapter).run("110000")  # type: ignore[arg-type]
 
     assert result.status == "succeeded"
-    assert result.counts == ImportCounts(requested=2, received=4, inserted=3, unchanged=1)
+    assert result.counts == ImportCounts(
+        requested=2, received=4, inserted=3, new=3, unchanged=1
+    )
     assert repository.finished[0][0] == "succeeded"
 
 
@@ -132,6 +162,9 @@ def test_changed_content_creates_a_new_snapshot(
 
     assert result1.counts.inserted == 1
     assert result2.counts.inserted == 1
+    assert result1.counts.new == 1
+    assert result2.counts.changed == 1
+    assert result2.counts.new == 0
     assert repository.writes == 2
 
 
@@ -164,6 +197,24 @@ def test_adapter_failure_closes_run_as_failed(
     assert result.counts.failed == 1
     assert repository.finished[0][0] == "failed"
     assert repository.finished[0][2] == "RuntimeError: fixture source failed"
+    assert result.error_summary == "RuntimeError: fixture source failed"
+
+
+def test_runner_calls_task_heartbeat_at_each_page_boundary(
+    registration: SourceRegistration,
+) -> None:
+    adapter = MemoryAdapter(
+        [SourcePage((make_record("clinic-1", "One"),), "page-2"),
+         SourcePage((make_record("clinic-2", "Two"),), None)]
+    )
+    boundaries: list[str] = []
+
+    result = CollectorRunner(MemoryRepository(registration), adapter).run(
+        "110000", on_page_boundary=boundaries.append
+    )  # type: ignore[arg-type]
+
+    assert result.status == "succeeded"
+    assert boundaries == ["run-id", "run-id"]
 
 
 def test_interrupt_closes_run_as_cancelled_and_is_propagated(
@@ -199,8 +250,8 @@ def test_dry_run_recognizes_existing_snapshot_as_unchanged(
 ) -> None:
     record = make_record("clinic-1", "Clinic One")
     repository = MemoryRepository(registration)
-    repository.snapshots.add(
-        ("source-id", record.source_key, canonical_sha256(record.raw_payload))
+    repository.snapshots[("source-id", record.source_key, canonical_sha256(record.raw_payload))] = (
+        "existing-id", record.raw_payload
     )
     adapter = MemoryAdapter([SourcePage((record,), None)])
 

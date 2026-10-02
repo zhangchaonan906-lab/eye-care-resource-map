@@ -53,10 +53,15 @@ class ETLRepository:
                 """,
                 (import_run_id,),
             ).fetchone()
-            if scope != ("succeeded", "approved", "manual_only"):
+            if (
+                scope is None
+                or scope[0] != "succeeded"
+                or scope[1] != "approved"
+                or scope[2] not in {"manual_only", "automated_access_allowed"}
+            ):
                 raise ValueError(
                     "import-run-id must identify a succeeded run from an approved "
-                    "manual_only source"
+                    "manual or automated source"
                 )
         rows = self._connection.execute(
             """
@@ -65,8 +70,8 @@ class ETLRepository:
             JOIN app_private.source_catalog sc ON sc.id = sr.source_id
             WHERE sc.status = 'approved'
               AND (
-                (sc.access_policy = 'automated_access_allowed' AND %s::uuid IS NULL)
-                OR (sc.access_policy = 'manual_only' AND sr.import_run_id = %s::uuid)
+                (%s::uuid IS NULL AND sc.access_policy = 'automated_access_allowed')
+                OR sr.import_run_id = %s::uuid
               )
               AND NOT EXISTS (
                 SELECT 1 FROM app_private.candidate_records cr
@@ -96,8 +101,8 @@ class ETLRepository:
             JOIN app_private.candidate_records cr ON cr.source_record_id = sr.id
             WHERE sc.status = 'approved'
               AND (
-                (sc.access_policy = 'automated_access_allowed' AND %s::uuid IS NULL)
-                OR (sc.access_policy = 'manual_only' AND sr.import_run_id = %s::uuid)
+                (%s::uuid IS NULL AND sc.access_policy = 'automated_access_allowed')
+                OR sr.import_run_id = %s::uuid
               )
             """,
             (import_run_id, import_run_id),

@@ -5,6 +5,8 @@ from datetime import date, datetime
 from pathlib import PurePosixPath
 from typing import Any, Literal
 
+from eye_collector.changes import ChangeType
+
 
 @dataclass(frozen=True, slots=True)
 class SourceRegistration:
@@ -84,6 +86,15 @@ class RawRecord:
 
 
 @dataclass(frozen=True, slots=True)
+class SnapshotWriteResult:
+    change_type: ChangeType
+    source_record_id: str | None = None
+    previous_source_record_id: str | None = None
+    changed_paths: tuple[str, ...] = ()
+    diff_truncated: bool = False
+
+
+@dataclass(frozen=True, slots=True)
 class SourcePage:
     records: tuple[RawRecord, ...]
     next_cursor: str | None
@@ -105,6 +116,8 @@ class ImportCounts:
     requested: int = 0
     received: int = 0
     inserted: int = 0
+    new: int = 0
+    changed: int = 0
     unchanged: int = 0
     failed: int = 0
 
@@ -113,6 +126,8 @@ class ImportCounts:
             "requested": self.requested,
             "received": self.received,
             "inserted": self.inserted,
+            "new": self.new,
+            "changed": self.changed,
             "unchanged": self.unchanged,
             "failed": self.failed,
         }
@@ -124,3 +139,5 @@ class ImportResult:
     status: str
     counts: ImportCounts = field(default_factory=ImportCounts)
     dry_run: bool = False
+    error_summary: str | None = None
+    error_type: str | None = None
