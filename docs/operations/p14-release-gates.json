@@ -1,26 +1,168 @@
 {
   "formatVersion": 1,
-  "environment": "staging-engineering",
+  "environment": "production-release",
+  "asOf": "2026-10-02T21:14:45Z",
   "gates": {
-    "SYSTEM_QA": { "status": "PASS", "evidence": "P13 system E2E passed and PR #24 was squash merged to main." },
-    "BUILD": { "status": "PASS", "evidence": "Web production build, unit tests, lint, and typecheck passed locally on the P14 branch; CI remains the merge gate." },
-    "SECURITY_SCANS": { "status": "PASS", "evidence": "Web npm audit reported zero vulnerabilities; isolated collector pip-audit reported none; repository/Docker-context/Web static secret scan passed. CI remains the merge gate." },
-    "STAGING_HEALTH": { "status": "PASS", "evidence": "Liveness/readiness routes and health response contract have unit coverage." },
-    "NO_REAL_SOURCE_AUTOMATION": { "status": "PASS", "evidence": "P14 uses synthetic fixtures; no real source schedules or import runs were enabled." },
-    "REAL_PUBLISHED_DATA_SAMPLE": { "status": "PENDING", "evidence": "Insufficient real published sample; P14-A uses synthetic fixtures only." },
-    "REAL_DATA_QUALITY_SAMPLE": { "status": "PENDING", "evidence": "Real-data QA remains pending." },
-    "PRODUCTION_BASEMAP": { "status": "PENDING", "evidence": "Only placeholder/development basemap; provider rights and attribution not approved." },
-    "PRODUCTION_COORDINATE_PROVIDER": { "status": "PENDING", "evidence": "No production geocoder selected or called." },
-    "PRODUCTION_SOURCE_COVERAGE": { "status": "PENDING", "evidence": "National source coverage is incomplete." },
-    "NEARBY_POST_CONTRACT": { "status": "PASS", "evidence": "Nearby accepts POST JSON; GET returns 405; sentinel is absent from browser request URLs." },
-    "DEPLOYMENT_NEARBY_PRIVACY": { "status": "PENDING", "evidence": "Application does not log request bodies; staging provider access-log body capture/retention could not be verified." },
-    "PRODUCTION_SECURITY_HEADERS": { "status": "PENDING", "evidence": "Headers are configured; actual production HTTPS deployment is not available for verification." },
-    "PRODUCTION_RATE_LIMITING": { "status": "PENDING", "evidence": "No verified distributed public API limiter is configured." },
-    "BACKUP_RESTORE": { "status": "PASS", "evidence": "Local disposable PostGIS drill backed up synthetic data, restored to a recreated empty database, matched object counts, and passed the public API query smoke. This is not a cloud backup or production recovery SLA." },
-    "MONITORING": { "status": "PENDING", "evidence": "Monitoring contract documented; external alert delivery is not configured." },
-    "STAGING_SMOKE": { "status": "PENDING", "evidence": "No STAGING_SITE_URL or staging credentials were present; cloud smoke was not run." },
-    "STAGING_DATABASE": { "status": "PENDING", "evidence": "No isolated staging PostgreSQL credentials were present." },
-    "WORKER_HOSTING": { "status": "PENDING", "evidence": "Container artifact is configured; no worker host is selected or deployed." },
-    "STAGING_DEPLOYMENT": { "status": "PENDING", "evidence": "Deployment blocked because staging credentials are unavailable." }
+    "SYSTEM_QA": {
+      "status": "PASS",
+      "owner": "qa-owner",
+      "evidence": "P13 system E2E passed in the checks for PR #25; PR #25 was merged to main at db50b4aa72d5577dc134e8127460e757c3b54de2.",
+      "requiredAction": "Re-run the full system QA suite after any release-affecting changes.",
+      "verifiedAt": "2026-10-02T21:14:45Z"
+    },
+    "BUILD": {
+      "status": "PASS",
+      "owner": "release-engineering",
+      "evidence": "P14-A build and release checks passed in PR #25 CI before merge db50b4aa72d5577dc134e8127460e757c3b54de2.",
+      "requiredAction": "Require a green build for the final release commit.",
+      "verifiedAt": "2026-10-02T21:14:45Z"
+    },
+    "SECURITY_SCANS": {
+      "status": "PASS",
+      "owner": "security-owner",
+      "evidence": "P14-A dependency and repository security scans passed in PR #25 CI before merge db50b4aa72d5577dc134e8127460e757c3b54de2; this is CI evidence, not a deployed penetration test.",
+      "requiredAction": "Re-run scans on the final release commit and review new findings.",
+      "verifiedAt": "2026-10-02T21:14:45Z"
+    },
+    "APP_HEALTH_CONTRACT": {
+      "status": "PASS",
+      "owner": "web-owner",
+      "evidence": "Liveness/readiness route contracts and health response behavior have automated coverage in the merged P14-A code.",
+      "requiredAction": "Verify these endpoints against the actual isolated staging deployment.",
+      "verifiedAt": "2026-10-02T21:14:45Z"
+    },
+    "STAGING_HEALTH": {
+      "status": "PENDING",
+      "owner": "release-engineering",
+      "evidence": "No STAGING_SITE_URL or staging host credentials are configured; no remote health response was observed.",
+      "requiredAction": "Deploy to the isolated HTTPS staging host and verify live, ready, and version endpoints.",
+      "verifiedAt": "2026-10-02T21:14:45Z"
+    },
+    "NO_REAL_SOURCE_AUTOMATION": {
+      "status": "PENDING",
+      "owner": "data-operations",
+      "evidence": "No staging worker or scheduler is deployed, so the real-source schedule state cannot be verified remotely. The repository workflow is fixture-first and source policies fail closed for manual-only sources.",
+      "requiredAction": "Inspect the deployed scheduler and prove all real-source schedules are disabled before staging smoke.",
+      "verifiedAt": "2026-10-02T21:14:45Z"
+    },
+    "STAGING_DATABASE": {
+      "status": "PENDING",
+      "owner": "database-owner",
+      "evidence": "No isolated staging PostgreSQL/PostGIS URL or credentials are configured. The running local P11 database is not staging evidence.",
+      "requiredAction": "Provision a separate staging database, apply migrations 001–015, and verify least-privilege roles and isolation.",
+      "verifiedAt": "2026-10-02T21:14:45Z"
+    },
+    "STAGING_DEPLOYMENT": {
+      "status": "PENDING",
+      "owner": "release-engineering",
+      "evidence": "No staging URL or hosting credentials are configured; no cloud deployment was attempted.",
+      "requiredAction": "Select and configure the staging host, inject secrets through its secret manager, and deploy Web plus the fixture-only worker artifact.",
+      "verifiedAt": "2026-10-02T21:14:45Z"
+    },
+    "STAGING_SMOKE": {
+      "status": "PENDING",
+      "owner": "qa-owner",
+      "evidence": "No staging host is available. scripts/staging-smoke.mjs has not been run against a real HTTPS deployment.",
+      "requiredAction": "Run scripts/staging-smoke.mjs and record endpoint, noindex, security-header, cache, nearby POST, and commit-SHA results.",
+      "verifiedAt": "2026-10-02T21:14:45Z"
+    },
+    "BACKUP_RESTORE": {
+      "status": "PENDING",
+      "owner": "database-owner",
+      "evidence": "The local disposable synthetic backup/restore drill passed, but no backup has been restored into a separate actual staging database.",
+      "requiredAction": "Run a staging backup and restore to a separate target; verify schema, PostGIS, audit, source records, and public data.",
+      "verifiedAt": "2026-10-02T21:14:45Z"
+    },
+    "LOCAL_BACKUP_RESTORE_DRILL": {
+      "status": "PASS",
+      "owner": "database-owner",
+      "evidence": "P14-A disposable local PostGIS drill restored synthetic data into a recreated empty database, matched object counts, and passed the public API query smoke; it does not prove cloud recovery or production SLA.",
+      "requiredAction": "Keep this as engineering evidence; separately complete actual staging restore validation.",
+      "verifiedAt": "2026-10-02T21:14:45Z"
+    },
+    "NEARBY_POST_CONTRACT": {
+      "status": "PASS",
+      "owner": "web-owner",
+      "evidence": "Merged P14-A automated tests verify nearby uses POST JSON, GET is rejected, and sentinel coordinates are absent from browser request URLs.",
+      "requiredAction": "Retain the contract and verify it through the deployed staging smoke.",
+      "verifiedAt": "2026-10-02T21:14:45Z"
+    },
+    "DEPLOYMENT_NEARBY_PRIVACY": {
+      "status": "PENDING",
+      "owner": "privacy-owner",
+      "evidence": "Application code does not log request bodies, but browser history, application logs, host access logs, and gateway/body capture have not been verified on a deployment.",
+      "requiredAction": "Use sentinel coordinates to inspect browser URL/history, application logs, host access logs, and gateway logs; obtain evidence that provider request bodies are not captured or retained.",
+      "verifiedAt": "2026-10-02T21:14:45Z"
+    },
+    "PRODUCTION_SECURITY_HEADERS": {
+      "status": "PENDING",
+      "owner": "security-owner",
+      "evidence": "Security headers are configured in code, but no HTTPS staging response was inspected. CSP remains Report-Only.",
+      "requiredAction": "Verify HSTS, content type, referrer, permissions, frame restrictions, and CSP reports on HTTPS staging; assess violations before any CSP enforcement change.",
+      "verifiedAt": "2026-10-02T21:14:45Z"
+    },
+    "PRODUCTION_RATE_LIMITING": {
+      "status": "PENDING",
+      "owner": "platform-owner",
+      "evidence": "No distributed or edge limiter provider/configuration has been selected or verified; a single-process limiter is not production evidence.",
+      "requiredAction": "Select and test distributed limits for map, search, detail, nearby, and admin login, with separate policies for public reads and authentication.",
+      "verifiedAt": "2026-10-02T21:14:45Z"
+    },
+    "MONITORING": {
+      "status": "PENDING",
+      "owner": "operations-owner",
+      "evidence": "Monitoring requirements are documented, but no external alert delivery or production metrics destination is configured.",
+      "requiredAction": "Configure and exercise external alerts for web health/5xx, DB readiness, worker dead-letter/sync failures, and backup age.",
+      "verifiedAt": "2026-10-02T21:14:45Z"
+    },
+    "WORKER_HOSTING": {
+      "status": "PENDING",
+      "owner": "data-operations",
+      "evidence": "The collector container is an artifact only; no scheduler/worker runtime has been selected or deployed.",
+      "requiredAction": "Choose a runtime that supports scheduler --once and worker --once/loop; verify restart policy, secret injection, network access, logs, resource limits, and fixture-only staging execution.",
+      "verifiedAt": "2026-10-02T21:14:45Z"
+    },
+    "PRODUCTION_BASEMAP": {
+      "status": "PENDING",
+      "owner": "product-and-legal-owner",
+      "evidence": "No provider, production usage basis, attribution string, China availability, or domain/quota configuration has been approved. Public OSM tile servers are not an approved production option.",
+      "requiredAction": "Complete the provider comparison and obtain documented approval for coverage, rendering compatibility, commercial/public rights, tile/style/font/icon rights, attribution, quota, pricing, domain restrictions, retention, and audit obligations.",
+      "verifiedAt": "2026-10-02T21:14:45Z"
+    },
+    "PRODUCTION_COORDINATE_PROVIDER": {
+      "status": "PENDING",
+      "owner": "data-governance-owner",
+      "evidence": "No geocoder provider or terms authorizing persistent coordinate storage and public redisplay have been approved. No geocoder calls or production coordinate writes were made.",
+      "requiredAction": "Obtain written answers for geocoding, result persistence, database storage, redisplay/public map and commercial use, coordinate system, accuracy, quota, pricing, and deletion/withdrawal.",
+      "verifiedAt": "2026-10-02T21:14:45Z"
+    },
+    "REAL_PUBLISHED_DATA_SAMPLE": {
+      "status": "PENDING",
+      "owner": "data-operations",
+      "evidence": "Read-only query of the local P11 application database found 0 rows in public.published_facility_api. Historical P5 pilot rows/candidates are in a separate local pilot database and none was published.",
+      "requiredAction": "Obtain source-authorized real records, complete provenance and P3 ETL, location review, P11 human review, and publish only through the publication gate until at least 100 eligible real facilities exist.",
+      "verifiedAt": "2026-10-02T21:14:45Z"
+    },
+    "REAL_DATA_QUALITY_SAMPLE": {
+      "status": "PENDING",
+      "owner": "data-quality-owner",
+      "evidence": "No current published real-facility sample exists. Historical pilot QA is not the required published-coordinate quality sample.",
+      "requiredAction": "After a lawful sample is published, meet evidence precision >=98%, zero severe false publications, >=50 real verified coordinates per test region, and the required duplicate QA thresholds; keep insufficient samples pending.",
+      "verifiedAt": "2026-10-02T21:14:45Z"
+    },
+    "PRODUCTION_SOURCE_COVERAGE": {
+      "status": "PENDING",
+      "owner": "data-governance-owner",
+      "evidence": "P6 discovery documents leads, not national data coverage. The local P11 application database has 0 source snapshots, 0 candidates, and 0 published facilities. Coverage must not be described as complete nationally.",
+      "requiredAction": "Publish region/source discovery, approval, file-inspection, imported-row, candidate, published-facility, and last-update counts with wording scoped to verified coverage.",
+      "verifiedAt": "2026-10-02T21:14:45Z"
+    },
+    "DATA_CORRECTION_ENTRY": {
+      "status": "PENDING",
+      "owner": "product-operations-owner",
+      "evidence": "No public correction mailbox or approved form has been selected and tested; no automatic data mutation path is authorized.",
+      "requiredAction": "Choose and publish a contact/form with privacy notice, assign a manual reviewer/triage process, and route every correction through review without automatically changing canonical data.",
+      "verifiedAt": "2026-10-02T21:14:45Z"
+    }
   }
 }

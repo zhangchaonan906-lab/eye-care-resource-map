@@ -1,34 +1,20 @@
-# P5 Pilot Source Gate
+# P5 Pilot Source Gate and Status
 
-P5-A source reviews are stored separately for each region. A source is eligible only after a reviewer has documented the owner, jurisdiction, exact permitted fields, access method, robots policy, terms, automation, storage, redistribution, attribution, and rate limits. If any essential right is unclear, decision stays `UNKNOWN` and P2 keeps the catalog row pending.
+> **Status note (2026-10-02):** this file replaces an outdated pre-import status summary. The earlier statements that no official files/imports existed were superseded by the completed local P5 pilot documented in [`../../operations/p5-real-pilot-final-report.md`](../../operations/p5-real-pilot-final-report.md). The final report is historical pilot evidence; it does not mean records are present in the current P11 application database or published.
 
-An `APPROVED` document alone does not change database state. A separately reviewed catalog change must set `status=approved`, `access_policy=automated_access_allowed`, non-empty use basis and permitted fields. The existing P2 `SourcePolicy` remains the runtime authorization gate. A provider review is separate; coordinates cannot be persisted unless its database policy explicitly allows persistent storage.
+## Current P5 facts
 
-## First-round query-entry reviews (preserved)
+- The final P5 report records 50 Beijing source rows and all 27 Shenzhen Bao'an rows imported into a separate local pilot database; P3 ETL created 72 candidates and 8 duplicate-review cases.
+- The P5 pilot database recorded 0 facilities and 0 facility locations. No geocoder was called and no production coordinate was stored.
+- The current local P11 application database is separate. The P14-B read-only check found 0 source snapshots, 0 candidates, and 0 published facilities there.
+- Source rows remain subject to each source's own fields, region, attribution, retention, withdrawal, and transfer restrictions. A historical local pilot is not authorization to move records into another database or public application.
 
-- Beijing health-institution query entry: `UNKNOWN`; this finding is preserved.
-- Guangdong health-institution query entry: `UNKNOWN`; this finding is preserved.
+## Catalog and use policy
 
-## Second-round open-data platform reviews
+An `APPROVED` source review is distinct from runtime access. These P5 sources remain `manual_only`; no automated collection or P12 schedule is authorized by this document. Source approval must be based on the exact dataset, operator, fields, allowed operations, terms, retention, attribution, and withdrawal conditions.
 
-- Beijing `医院`: `APPROVED` for bounded, registered-user official-file import; 15,191 published rows, names only, and not selected for this pilot import.
-- Beijing `定点医疗机构信息`: `APPROVED` for bounded, registered-user official-file import; 4,877 rows and six listed fields. This is the selected Beijing pilot dataset.
-- Shenzhen `宝安区-医院基本信息`: `APPROVED` for a bounded registered-user file import; 27 archived records from Bao'an only. This is the selected Shenzhen sample, not Guangdong-wide coverage.
-- Beijing permits free dissemination with attribution. Shenzhen prohibits all paid or unpaid transfer of platform data and requires deletion/cessation if the dataset is taken offline.
-- Portal accounts are required for dataset downloads/API access. No authorized portal account or downloaded source file is available in this execution environment; therefore the approved catalog rows do not imply that data have been imported.
+- Beijing “医院”: catalog review is approved for name-only fields; its catalog source-update date is 2024-11-20 and must be refreshed before production consideration.
+- Beijing “定点医疗机构信息”: catalog review is approved for the bounded manual-file pilot and records rights metadata. The broad platform-use interpretation and cross-environment transfer for production still require a current rights review.
+- Shenzhen Bao'an “医院基本信息”: catalog review is approved for the bounded manual-file pilot; raw transfer/redistribution is restricted and withdrawal requires deletion. The prior 27-row dataset is Bao'an-only and is not current P11 application data.
 
-The dataset-specific rights, exact mappings, scope, freshness, and access requirements are documented in the individual review files in `beijing/` and `shenzhen/`.
-
-Current execution gate:
-
-- Both platform agreements qualify source use, but no registered-user export is available to the collector. P5 real-data import and manual QA are blocked pending official files obtained by an authorized platform user.
-- AMap geocoder: blocked for persistent coordinate storage until specific written authorization is obtained.
-- P5-B: file and API adapter framework is implemented. API access is not enabled for the reviewed `manual_only` sources. Real source rows and coordinates have not been imported.
-
-The P4 quota and pacing guard is per pipeline process/run. Before enabling any real geocoder across concurrent workers, serialize executions or add shared quota reservation and rate limiting; independent processes can otherwise exceed an account-wide provider policy in aggregate.
-
-The `run` command supports only the reviewed Beijing and Bao'an file mappings. File imports require the matching catalog source to be `approved` and `manual_only`, an exact region (`110000` for Beijing, `440306` for Bao'an), an explicit limit of at most 150, and `PILOT_REAL_DATA=true`. A database trigger caps the shared pilot group at 300 source snapshots. `manual_only` sources are rejected by the HTTP adapter policy. Use `run --source fixture` only for synthetic development; fixture output must not be presented as real pilot data.
-
-## Approval evidence needed to unblock
-
-Have an authorized portal user download the selected official file and provide it through a secure, non-repository path. Verify the platform terms and dataset metadata again immediately before import, run a dry-run first, then import no more than 150 Beijing rows and all 27 Bao'an rows (177 total). Perform manual QA on at least 50 Beijing rows and every available Shenzhen row. Do not commit the real source files. Before public application release, add source attribution in the UI and complete any platform application filing requirements.
+See the [P14-B source-readiness review](../../operations/p14-production-readiness.md#4-real-data) before any new use. Do not change source state or activate a source based on this README.
