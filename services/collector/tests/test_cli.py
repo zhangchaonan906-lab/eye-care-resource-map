@@ -11,8 +11,14 @@ from pathlib import Path
 import pytest
 from openpyxl import Workbook
 
+from eye_collector.changes import ChangeType
 from eye_collector.cli import build_parser, main
-from eye_collector.models import RawRecord, SourceDescriptor, SourceRegistration
+from eye_collector.models import (
+    RawRecord,
+    SnapshotWriteResult,
+    SourceDescriptor,
+    SourceRegistration,
+)
 from eye_collector.policy import SourcePolicy
 from eye_collector.sources.open_data_file import (
     BEIJING_DESIGNATED_MEDICAL_INSTITUTIONS,
@@ -76,15 +82,22 @@ class FakeRepository:
     def snapshot_exists(self, source_id: str, record: RawRecord, content_hash: str) -> bool:
         return (record.source_key, content_hash) in self.records
 
+    def preview_snapshot(
+        self, source_id: str, record: RawRecord, content_hash: str
+    ) -> SnapshotWriteResult:
+        if (record.source_key, content_hash) in self.records:
+            return SnapshotWriteResult(ChangeType.UNCHANGED)
+        return SnapshotWriteResult(ChangeType.NEW)
+
     def insert_snapshot(
         self, run_id: str, source_id: str, record: RawRecord, content_hash: str
-    ) -> bool:
+    ) -> SnapshotWriteResult:
         marker = (record.source_key, content_hash)
         if marker in self.records:
-            return False
+            return SnapshotWriteResult(ChangeType.UNCHANGED)
         self.records.add(marker)
         self.inserted += 1
-        return True
+        return SnapshotWriteResult(ChangeType.NEW, f"synthetic-{self.inserted}")
 
     def finish_run(
         self, run_id: str, status: str, counts: dict[str, int], error_summary: str | None = None
@@ -104,6 +117,24 @@ def test_cli_parser_accepts_source_region_limit_and_dry_run() -> None:
     assert args.region == "110000"
     assert args.limit == 3
     assert args.dry_run is True
+
+
+@pytest.mark.parametrize(
+    ("argv", "command", "loop"),
+    [
+        (["scheduler", "--once"], "scheduler", False),
+        (["worker", "--once"], "worker", False),
+        (["worker", "--loop", "--poll-seconds", "7"], "worker", True),
+    ],
+)
+def test_cli_parser_exposes_scheduler_and_worker_modes(
+    argv: list[str], command: str, loop: bool
+) -> None:
+    args = build_parser().parse_args(argv)
+
+    assert args.command == command
+    if command == "worker":
+        assert args.loop is loop
 
 
 def test_cli_parser_accepts_bounded_open_data_file_source() -> None:

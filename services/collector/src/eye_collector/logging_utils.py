@@ -42,6 +42,13 @@ class JsonLogFormatter(logging.Formatter):
         "http_status",
         "url",
         "error",
+        "task_id",
+        "attempt",
+        "stage",
+        "import_run_id",
+        "counts",
+        "duration_ms",
+        "error_code",
     )
 
     def format(self, record: logging.LogRecord) -> str:

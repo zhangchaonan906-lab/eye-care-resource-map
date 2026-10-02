@@ -1,6 +1,7 @@
 import { Pool, type QueryResultRow } from "pg";
 
 export type ReviewType = "candidates" | "duplicates" | "locations" | "facilities" | "imports" | "audit";
+export type SyncReviewType = "policies" | "tasks" | "alerts";
 const VIEW_BY_TYPE: Record<ReviewType, string> = {
   candidates: "app_private.admin_candidate_review",
   duplicates: "app_private.admin_duplicate_review",
@@ -52,6 +53,42 @@ export class AdminReviewRepository {
     await this.assertRoleMembership();
     const result = await this.pool.query(`SELECT * FROM ${VIEW_BY_TYPE[type]} WHERE id=$1::uuid`, [id]);
     return result.rows[0] ?? null;
+  }
+
+  async listSync(type: SyncReviewType, options: { limit: number; cursor?: string; status?: string }): Promise<{ items: QueryResultRow[]; nextCursor: string | null }> {
+    const views: Record<SyncReviewType, string> = {
+      policies: "app_private.admin_sync_policy_review",
+      tasks: "app_private.admin_sync_task_review",
+      alerts: "app_private.admin_sync_alert_review",
+    };
+    const statusColumn: Record<SyncReviewType, string> = { policies: "source_status", tasks: "status", alerts: "severity" };
+    await this.assertRoleMembership();
+    const values: unknown[] = [];
+    const where: string[] = [];
+    if (options.cursor) { values.push(options.cursor); where.push(`id < $${values.length}::uuid`); }
+    if (options.status) { values.push(options.status); where.push(`${statusColumn[type]} = $${values.length}`); }
+    values.push(Math.min(Math.max(options.limit, 1), 100) + 1);
+    const result = await this.pool.query(
+      `SELECT * FROM ${views[type]}${where.length ? ` WHERE ${where.join(" AND ")}` : ""} ORDER BY id DESC LIMIT $${values.length}`,
+      values,
+    );
+    const hasMore = result.rows.length > options.limit;
+    const items = result.rows.slice(0, options.limit);
+    return { items, nextCursor: hasMore ? String(items.at(-1)?.id ?? "") || null : null };
+  }
+
+  async decideSync(input: { sourceId: string; actorId: string; requestId: string; action: "RUN_NOW" | "PAUSE_SYNC" | "RESUME_SYNC"; reason: string }): Promise<unknown> {
+    await this.assertRoleMembership();
+    const result = input.action === "RUN_NOW"
+      ? await this.pool.query<{ result: unknown }>(
+        `SELECT app_private.admin_enqueue_source_sync_task($1::uuid,$2::uuid,$3::uuid,$4) AS result`,
+        [input.sourceId, input.actorId, input.requestId, input.reason],
+      )
+      : await this.pool.query<{ result: unknown }>(
+        `SELECT app_private.admin_set_source_sync_paused($1::uuid,$2::uuid,$3::uuid,$4,$5) AS result`,
+        [input.sourceId, input.actorId, input.requestId, input.reason, input.action === "PAUSE_SYNC"],
+      );
+    return result.rows[0]?.result;
   }
 
   async decide(input: { requestId: string; actorId: string; entity: string; entityId: string; action: string; payload: Record<string, unknown>; reason: string }): Promise<unknown> {

@@ -82,8 +82,11 @@ def test_database_fixture_snapshots_are_idempotent_and_changed_content_is_histor
 
     assert (first.status, first.counts.requested, first.counts.received) == ("succeeded", 2, 8)
     assert (first.counts.inserted, first.counts.unchanged) == (7, 1)
+    assert (first.counts.new, first.counts.changed) == (7, 0)
     assert (second.counts.inserted, second.counts.unchanged) == (0, 8)
+    assert (second.counts.new, second.counts.changed) == (0, 0)
     assert (updated.counts.inserted, updated.counts.unchanged) == (1, 7)
+    assert (updated.counts.new, updated.counts.changed) == (0, 1)
 
     with psycopg.connect(database_url(), autocommit=True) as connection:
         rows = connection.execute(
@@ -95,6 +98,20 @@ def test_database_fixture_snapshots_are_idempotent_and_changed_content_is_histor
             """
         ).fetchone()
         assert rows == (2, 1)
+
+        change = connection.execute(
+            """SELECT change_type,previous_source_record_id,source_record_id,changed_paths,
+                      diff_truncated
+               FROM app_private.source_change_events
+               WHERE source_id=(SELECT id FROM app_private.source_catalog
+                                WHERE name='Fixture Directory')
+                 AND source_key='clinic-002' ORDER BY created_at DESC LIMIT 1"""
+        ).fetchone()
+        assert change is not None
+        assert change[0] == "CHANGED"
+        assert change[1] is not None and change[2] is not None and change[1] != change[2]
+        assert change[3] == ["name", "updated_at"]
+        assert change[4] is False
 
         valid_links = connection.execute(
             """

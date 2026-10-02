@@ -119,6 +119,19 @@ def test_terminal_missing_name_skip_is_versioned_and_idempotent() -> None:
     assert params == ("source-record-1", "p3.3", "terminal_skip", "missing_name")
 
 
+def test_scoped_etl_accepts_succeeded_run_from_approved_automated_source() -> None:
+    connection = Connection([])
+    connection.responses = [
+        [("succeeded", "approved", "automated_access_allowed")],
+        [],
+    ]
+    repository = ETLRepository(connection)  # type: ignore[arg-type]
+
+    assert repository.fetch_pending(import_run_id="run-id") == []
+    assert "import_run_id = %s::uuid" in connection.statements[1][0]
+    assert "automated_access_allowed" in connection.statements[0][0] or connection.statements[0][1]
+
+
 def test_facility_target_query_filters_to_reliable_registration_or_exact_name_region() -> None:
     connection = Connection(
         [("facility-1", "示例医院", "东院", "110105", "REG-1")]

@@ -53,3 +53,27 @@ def test_json_log_formatter_emits_only_approved_structured_fields() -> None:
     ):
         assert field in parsed
     assert parsed["error"] is None
+
+
+def test_json_log_formatter_supports_sync_fields_and_excludes_untrusted_payloads() -> None:
+    record = logging.LogRecord("worker", logging.ERROR, "file.py", 1, "sync failed", (), None)
+    record.event = "source_sync_failed"
+    record.task_id = "task-1"
+    record.source_id = "source-1"
+    record.region_code = "110000"
+    record.attempt = 2
+    record.stage = "etl"
+    record.import_run_id = "run-1"
+    record.duration_ms = 123
+    record.error_code = "ETL_FAILED"
+    record.counts = {"errors": 1}
+    record.raw_payload = {"secret": "private row"}
+
+    parsed = json.loads(JsonLogFormatter().format(record))
+
+    assert parsed["task_id"] == "task-1"
+    assert parsed["attempt"] == 2
+    assert parsed["stage"] == "etl"
+    assert parsed["error_code"] == "ETL_FAILED"
+    assert "raw_payload" not in parsed
+    assert "private row" not in json.dumps(parsed)

@@ -7,9 +7,10 @@ from typing import Any
 
 import pytest
 
+from eye_collector.changes import ChangeType
 from eye_collector.db import PostgresRepository
 from eye_collector.exceptions import SourcePolicyError
-from eye_collector.models import RawRecord, SourceDescriptor
+from eye_collector.models import RawRecord, SnapshotWriteResult, SourceDescriptor
 from eye_collector.policy import SourcePolicy
 
 
@@ -120,15 +121,17 @@ def test_ambiguous_source_is_rejected_before_import_run_insert(
     assert len(connection.statements) == 2
 
 
-def test_snapshot_insert_uses_conflict_key_and_returns_inserted_state() -> None:
-    connection = FakeConnection([[("new-snapshot-id",)]])
+def test_snapshot_insert_classifies_new_and_records_change_event() -> None:
+    connection = FakeConnection([[], [], [], [("new-snapshot-id",)], []])
     repository = PostgresRepository(connection)  # type: ignore[arg-type]
     record = RawRecord("facility-1", "https://fixture.invalid/1", {"name": "Fixture"})
 
     inserted = repository.insert_snapshot("run-id", "source-id", record, "a" * 64)
 
-    assert inserted is True
-    query, params = connection.statements[0]
+    assert inserted == SnapshotWriteResult(ChangeType.NEW, "new-snapshot-id")
+    query, params = connection.statements[3]
     assert "ON CONFLICT (source_id, source_key, content_hash) DO NOTHING" in query
     assert params is not None
     assert params[0:2] == ("source-id", "facility-1")
+
+    assert "INSERT INTO app_private.source_change_events" in connection.statements[4][0]

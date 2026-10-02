@@ -1,6 +1,8 @@
 import { defineConfig } from "vitest/config";
+import { fileURLToPath } from "node:url";
 
 export default defineConfig({
+  resolve: { alias: { "@": fileURLToPath(new URL("./src", import.meta.url)) } },
   test: {
     environment: "jsdom",
     include: [
@@ -10,6 +12,7 @@ export default defineConfig({
       "src/lib/map/**/*.test.ts",
       "src/lib/admin/**/*.test.ts",
       "src/app/hospitals/**/*.test.tsx",
+      "src/app/api/admin/sync/**/*.test.ts",
     ],
     exclude: ["**/*.db.test.ts", "**/node_modules/**", "**/.git/**"],
     setupFiles: ["./src/test/setup.ts"],

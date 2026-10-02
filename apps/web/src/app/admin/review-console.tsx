@@ -2,12 +2,13 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 
-type QueueType = "candidates" | "duplicates" | "locations" | "facilities" | "imports" | "audit";
+type QueueType = "candidates" | "duplicates" | "locations" | "facilities" | "imports" | "audit" | "syncPolicies" | "syncTasks" | "syncAlerts";
 type Row = Record<string, unknown> & { id: string };
 const TABS: Array<{ key: QueueType; label: string }> = [
   { key: "candidates", label: "候选审核" }, { key: "duplicates", label: "重复冲突" },
   { key: "locations", label: "坐标审核" }, { key: "facilities", label: "发布审核" },
   { key: "imports", label: "运行记录" }, { key: "audit", label: "审计记录" },
+  { key: "syncPolicies", label: "同步来源" }, { key: "syncTasks", label: "同步任务" }, { key: "syncAlerts", label: "同步告警" },
 ];
 const STATUS_OPTIONS: Record<QueueType, Array<[string, string]>> = {
   candidates: [["", "全部状态"], ["unmatched", "未匹配"], ["needs_review", "待复核"], ["matched", "已匹配"], ["rejected", "已拒绝"]],
@@ -16,8 +17,11 @@ const STATUS_OPTIONS: Record<QueueType, Array<[string, string]>> = {
   facilities: [["", "全部状态"], ["in_review", "待核验"], ["verified", "待发布"], ["published", "已发布"], ["withdrawn", "已撤回"]],
   imports: [["", "全部状态"], ["running", "运行中"], ["succeeded", "成功"], ["failed", "失败"]],
   audit: [["", "全部动作"], ["PUBLISH", "发布"], ["WITHDRAW", "撤回"], ["MERGE", "合并"]],
+  syncPolicies: [["", "全部来源"], ["approved", "已批准"], ["pending", "待审核"], ["suspended", "已暂停"]],
+  syncTasks: [["", "全部状态"], ["queued", "排队中"], ["running", "运行中"], ["retry_wait", "等待重试"], ["succeeded", "成功"], ["dead_letter", "死信"]],
+  syncAlerts: [["", "全部级别"], ["warning", "警告"], ["error", "错误"], ["critical", "严重"]],
 };
-const STATUS_COLUMN: Record<QueueType, string> = { candidates: "match_status", duplicates: "resolution", locations: "validation_status", facilities: "verification_status", imports: "status", audit: "action" };
+const STATUS_COLUMN: Record<QueueType, string> = { candidates: "match_status", duplicates: "resolution", locations: "validation_status", facilities: "verification_status", imports: "status", audit: "action", syncPolicies: "source_status", syncTasks: "status", syncAlerts: "severity" };
 
 function display(value: unknown): string {
   if (value === null || value === undefined || value === "") return "—";
@@ -42,12 +46,13 @@ export default function AdminConsole({ username }: { username: string }) {
 
   const load = useCallback(async (type: QueueType, selectedStatus: string, currentCursor?: string | null, selectedSource?: string, selectedRegion?: string) => {
     try {
-      const params = new URLSearchParams({ type, limit: "25" });
+      const syncType = type === "syncPolicies" ? "policies" : type === "syncTasks" ? "tasks" : type === "syncAlerts" ? "alerts" : null;
+      const params = new URLSearchParams({ type: syncType ?? type, limit: "25" });
       if (selectedStatus) params.set("status", selectedStatus);
       if (currentCursor) params.set("cursor", currentCursor);
       if (selectedSource) params.set("source", selectedSource);
       if (selectedRegion) params.set("region", selectedRegion);
-      const response = await fetch(`/api/admin/review?${params}`, { cache: "no-store" });
+      const response = await fetch(`${syncType ? "/api/admin/sync" : "/api/admin/review"}?${params}`, { cache: "no-store" });
       setBusy(true); setError("");
       const result = await response.json();
       if (response.status === 401) { window.location.replace("/admin/login"); return; }
@@ -66,10 +71,11 @@ export default function AdminConsole({ username }: { username: string }) {
     if (!selected || reason.trim().length < 5) { setActionMessage("请填写至少 5 个字符的审核理由。"); return; }
     if (confirmation && !window.confirm(`即将执行“${action}”。请确认该操作及其影响。`)) return;
     setBusy(true); setActionMessage("");
-    const entity = tab;
     const body = { action, reason: reason.trim(), ...payload };
     try {
-      const response = await fetch(`/api/admin/${entity}/${selected.id}/decision`, {
+      const isSync = tab.startsWith("sync");
+      const target = isSync ? `/api/admin/sync/${String(selected.source_id ?? "")}/decision` : `/api/admin/${tab}/${selected.id}/decision`;
+      const response = await fetch(target, {
         method: "POST", headers: { "Content-Type": "application/json", "X-CSRF-Token": csrf, "Idempotency-Key": crypto.randomUUID() },
         body: JSON.stringify(body),
       });
@@ -88,6 +94,11 @@ export default function AdminConsole({ username }: { username: string }) {
 
   function actionButtons() {
     if (!selected) return null;
+    if (tab === "syncPolicies") return <div className="admin-actions">
+      <button disabled={busy || selected.access_policy !== "automated_access_allowed" || selected.source_status !== "approved"} onClick={() => void decide("RUN_NOW")}>立即运行</button>
+      <button disabled={busy} onClick={() => void decide("PAUSE_SYNC", {}, true)}>暂停同步</button>
+      <button disabled={busy} onClick={() => void decide("RESUME_SYNC", {}, true)}>恢复同步</button>
+    </div>;
     if (tab === "candidates") return <div className="admin-actions">
       <details><summary>建立审核中机构</summary><div className="admin-form-grid">
         <input aria-label="机构名称" placeholder="机构名称（需审核员确认）" id="candidate-name" />
@@ -137,10 +148,10 @@ export default function AdminConsole({ username }: { username: string }) {
         <div className="admin-detail__heading"><div><p className="admin-eyebrow">REVIEW RECORD</p><h3>{display(selected.name ?? selected.parsed_name ?? selected.candidate_name ?? selected.id)}</h3></div><code>{selected.id}</code></div>
         {tab === "facilities" && <div className="admin-checklist"><h4>发布检查清单</h4>{Object.entries((selected.publication_checklist as Record<string, unknown>) ?? {}).filter(([key]) => key !== "blockers" && key !== "exists").map(([key,value]) => <p key={key} className={value ? "is-pass" : "is-fail"}>{value ? "✓" : "✗"} {key}</p>)}{Array.isArray((selected.publication_checklist as { blockers?: unknown[] })?.blockers) && <p className="admin-error">阻塞项：{display((selected.publication_checklist as { blockers: unknown[] }).blockers)}</p>}</div>}
         <dl>{detailKeys.map((key) => <div key={key}><dt>{key}</dt><dd>{display(selected[key])}</dd></div>)}</dl>
-        {TABS.find((item) => item.key === tab)?.key && !["audit", "imports"].includes(tab) && <div className="admin-decision"><label>审核理由（5–500 字）<textarea minLength={5} maxLength={500} value={reason} onChange={(event) => setReason(event.target.value)} /></label>{actionButtons()}</div>}
+        {TABS.find((item) => item.key === tab)?.key && !["audit", "imports", "syncTasks", "syncAlerts"].includes(tab) && <div className="admin-decision"><label>操作理由（5–500 字）<textarea minLength={5} maxLength={500} value={reason} onChange={(event) => setReason(event.target.value)} /></label>{actionButtons()}</div>}
       </>}
       {actionMessage && <p role="status" className="admin-status">{actionMessage}</p>}
     </section></div>
-    <footer className="admin-footnote">运行记录只读。文件导入与后台任务编排延期到 P12；本后台不会触发采集或地理编码。</footer>
+    <footer className="admin-footnote">来源审批仍由人工管理。同步操作仅排队、暂停或恢复已批准的自动化来源；不会触发地理编码或设施发布。</footer>
   </section></main>;
 }

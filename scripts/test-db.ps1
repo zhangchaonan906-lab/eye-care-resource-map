@@ -7,6 +7,7 @@ $previousDatabaseUrl = [Environment]::GetEnvironmentVariable('DATABASE_URL', 'Pr
 $previousEtlDatabaseUrl = [Environment]::GetEnvironmentVariable('ETL_DATABASE_URL', 'Process')
 $previousDatabaseAdminUrl = [Environment]::GetEnvironmentVariable('DATABASE_ADMIN_URL', 'Process')
 $previousGeocodeDatabaseUrl = [Environment]::GetEnvironmentVariable('GEOCODE_DATABASE_URL', 'Process')
+$previousSyncDatabaseUrl = [Environment]::GetEnvironmentVariable('SYNC_DATABASE_URL', 'Process')
 $portProbe = [Net.Sockets.TcpListener]::new([Net.IPAddress]::Loopback, 0)
 $portProbe.Start()
 $testPort = $portProbe.LocalEndpoint.Port
@@ -45,6 +46,17 @@ try {
   if ($LASTEXITCODE -ne 0) { throw 'P5 real export compatibility migration failed.' }
   docker compose -p $projectName exec -T db psql -U eye -d eye -v ON_ERROR_STOP=1 -f /workspace/db/migrations/010_etl_import_run_scope.sql
   if ($LASTEXITCODE -ne 0) { throw 'P5 ETL import-run scope migration failed.' }
+  foreach ($migration in @('011_public_api.sql','012_nearby_api.sql','013_admin_review.sql','014_incremental_sync.sql')) {
+    $sqlFile = "/workspace/db/migrations/$migration"
+    docker compose -p $projectName exec -T db psql -U eye -d eye -v ON_ERROR_STOP=1 -f $sqlFile
+    if ($LASTEXITCODE -ne 0) { throw "SQL failed: $sqlFile" }
+  }
+  $adminPassword = [Convert]::ToHexString([Security.Cryptography.RandomNumberGenerator]::GetBytes(32))
+  $syncPassword = [Convert]::ToHexString([Security.Cryptography.RandomNumberGenerator]::GetBytes(32))
+  docker compose -p $projectName exec -T db psql -U eye -d eye -v "admin_password=$adminPassword" -f /workspace/scripts/provision-admin-review-login.sql
+  if ($LASTEXITCODE -ne 0) { throw 'Could not provision the temporary admin review login.' }
+  docker compose -p $projectName exec -T db psql -U eye -d eye -v "sync_password=$syncPassword" -f /workspace/scripts/provision-sync-worker-login.sql
+  if ($LASTEXITCODE -ne 0) { throw 'Could not provision the temporary sync worker login.' }
   $testFiles = @(
     '/workspace/db/tests/001_core.sql',
     '/workspace/db/tests/002_evidence_location.sql',
@@ -53,7 +65,10 @@ try {
     '/workspace/db/tests/005_etl_candidates.sql',
     '/workspace/db/tests/006_geocoding.sql',
     '/workspace/db/tests/007_source_open_data_rights.sql',
-    '/workspace/db/tests/009_real_export_compatibility.sql'
+    '/workspace/db/tests/009_real_export_compatibility.sql',
+    '/workspace/db/tests/011_public_api.sql',
+    '/workspace/db/tests/012_nearby_api.sql',
+    '/workspace/db/tests/013_admin_review.sql'
   )
   foreach ($sqlFile in $testFiles) {
     docker compose -p $projectName exec -T db psql -U eye -d eye -v ON_ERROR_STOP=1 -f $sqlFile
@@ -66,10 +81,13 @@ try {
   if ($LASTEXITCODE -ne 0) { throw 'Could not provision the temporary collector login.' }
   docker compose -p $projectName exec -T db psql -U eye -d eye -f /workspace/scripts/seed-fixture-source.sql
   if ($LASTEXITCODE -ne 0) { throw 'Could not seed the synthetic source catalog.' }
+  docker compose -p $projectName exec -T db psql -U eye -d eye -v ON_ERROR_STOP=1 -f /workspace/db/tests/014_incremental_sync.sql
+  if ($LASTEXITCODE -ne 0) { throw 'P12 incremental sync database tests failed.' }
   $env:DATABASE_URL = "postgresql://eye_collector_runtime:$collectorPassword@127.0.0.1:$testPort/eye"
   docker compose -p $projectName exec -T db psql -U eye -d eye -v "etl_password=$etlPassword" -f /workspace/scripts/provision-etl-login.sql
   if ($LASTEXITCODE -ne 0) { throw 'Could not provision the temporary ETL login.' }
   $env:ETL_DATABASE_URL = "postgresql://eye_etl_runtime:$etlPassword@127.0.0.1:$testPort/eye"
+  $env:SYNC_DATABASE_URL = "postgresql://eye_sync_worker_runtime:$syncPassword@127.0.0.1:$testPort/eye"
   docker compose -p $projectName exec -T db psql -U eye -d eye -v "geocode_password=$geocodePassword" -f /workspace/scripts/provision-geocode-login.sql
   if ($LASTEXITCODE -ne 0) { throw 'Could not provision the temporary geocode login.' }
   $env:GEOCODE_DATABASE_URL = "postgresql://eye_geocode_runtime:$geocodePassword@127.0.0.1:$testPort/eye"
@@ -152,6 +170,11 @@ finally {
       Remove-Item Env:\GEOCODE_DATABASE_URL -ErrorAction SilentlyContinue
     } else {
       $env:GEOCODE_DATABASE_URL = $previousGeocodeDatabaseUrl
+    }
+    if ($null -eq $previousSyncDatabaseUrl) {
+      Remove-Item Env:\\SYNC_DATABASE_URL -ErrorAction SilentlyContinue
+    } else {
+      $env:SYNC_DATABASE_URL = $previousSyncDatabaseUrl
     }
   }
 }

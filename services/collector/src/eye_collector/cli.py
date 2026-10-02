@@ -4,9 +4,11 @@ import argparse
 import json
 import logging
 import os
+import socket
 import sys
+import time
 from collections.abc import Sequence
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import cast
 from uuid import UUID
 
@@ -31,6 +33,8 @@ from eye_collector.sources.open_data_file import (
     OpenDataFileAdapter,
     inspect_open_data_file,
 )
+from eye_collector.sync.repository import SyncRepository
+from eye_collector.sync.worker import SyncWorker
 
 _OPEN_DATA_DATASETS: dict[str, tuple[OpenDataDataset, str]] = {
     dataset.source_key: (dataset, region)
@@ -115,6 +119,14 @@ def build_parser() -> argparse.ArgumentParser:
     pilot.add_argument(
         "--obtained-at", help="official file acquisition time in ISO-8601 with offset"
     )
+    scheduler = commands.add_parser("scheduler", help="enqueue due approved source syncs")
+    scheduler.add_argument("--once", action="store_true", help="run one scheduler pass")
+    worker = commands.add_parser("worker", help="run the durable source sync worker")
+    worker_mode = worker.add_mutually_exclusive_group(required=True)
+    worker_mode.add_argument("--once", action="store_true", help="claim at most one task")
+    worker_mode.add_argument("--loop", action="store_true", help="poll until interrupted")
+    worker.add_argument("--poll-seconds", type=_positive_int, default=None)
+    worker.add_argument("--worker-id", default=None)
     return parser
 
 
@@ -178,7 +190,44 @@ def main(argv: Sequence[str] | None = None) -> int:
     etl_repository: ETLRepository | None = None
     geocode_repository: GeocodeRepository | None = None
     http: HttpClient | None = None
+    sync_repository: SyncRepository | None = None
     try:
+        if args.command == "scheduler":
+            sync_url = os.environ.get("SYNC_DATABASE_URL", "").strip()
+            if not sync_url:
+                raise ValueError("SYNC_DATABASE_URL is required for scheduler")
+            sync_repository = SyncRepository.connect(sync_url)
+            queued = sync_repository.enqueue_due(datetime.now(UTC))
+            print(json.dumps({"queued": queued}, separators=(",", ":")))
+            return 0
+        if args.command == "worker":
+            sync_url = os.environ.get("SYNC_DATABASE_URL", "").strip()
+            etl_url = os.environ.get("ETL_DATABASE_URL", "").strip()
+            if not sync_url:
+                raise ValueError("SYNC_DATABASE_URL is required for worker")
+            if not etl_url:
+                raise ValueError("ETL_DATABASE_URL is required for worker")
+            collector_config = CollectorConfig.from_env()
+            sync_repository = SyncRepository.connect(sync_url)
+            worker_id = args.worker_id or os.environ.get("WORKER_ID") or (
+                f"{socket.gethostname()}-{os.getpid()}"
+            )
+            worker = SyncWorker(
+                sync_repository, collector_config, etl_url, worker_id=worker_id
+            )
+            poll_seconds = args.poll_seconds or int(os.environ.get("WORKER_POLL_SECONDS", "5"))
+            if poll_seconds < 1 or poll_seconds > 300:
+                raise ValueError("WORKER_POLL_SECONDS must be between 1 and 300")
+            completed = 0
+            while True:
+                if worker.run_once():
+                    completed += 1
+                elif args.once:
+                    break
+                else:
+                    time.sleep(poll_seconds)
+            print(json.dumps({"tasks_processed": completed}, separators=(",", ":")))
+            return 0
         if args.command == "pilot":
             if os.environ.get("PILOT_REAL_DATA") != "true":
                 raise ValueError("pilot requires explicit PILOT_REAL_DATA=true opt-in")
@@ -358,6 +407,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             etl_repository.close()
         if geocode_repository is not None:
             geocode_repository.close()
+        if sync_repository is not None:
+            sync_repository.close()
 
 
 if __name__ == "__main__":

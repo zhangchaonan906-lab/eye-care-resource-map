@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable
 from contextlib import AbstractContextManager
 from typing import Protocol
 
@@ -59,11 +60,17 @@ class Pipeline:
         self._logger = logger or logging.getLogger("eye_collector.etl")
 
     def run(
-        self, *, limit: int | None = None, import_run_id: str | None = None
+        self,
+        *,
+        limit: int | None = None,
+        import_run_id: str | None = None,
+        on_checkpoint: Callable[[], None] | None = None,
     ) -> PipelineStats:
         if limit is not None and limit < 1:
             raise ValueError("limit must be a positive integer")
 
+        if on_checkpoint is not None:
+            on_checkpoint()
         snapshots = self._repository.fetch_pending(limit, import_run_id=import_run_id)
         counts = {
             "source_records_read": len(snapshots),
@@ -96,6 +103,8 @@ class Pipeline:
                         "error": safe_error_summary(error),
                     },
                 )
+            if on_checkpoint is not None:
+                on_checkpoint()
 
         counts["duplicate_cases"] = len(duplicate_case_ids)
         self._logger.info("etl_completed", extra={"event": "etl_completed", **counts})
