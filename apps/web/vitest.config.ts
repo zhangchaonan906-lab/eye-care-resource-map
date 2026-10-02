@@ -8,6 +8,7 @@ export default defineConfig({
     include: [
       "src/lib/public-api/handlers.test.ts",
       "src/lib/public-api/nearby.test.ts",
+      "src/lib/release/**/*.test.ts",
       "src/features/**/*.test.tsx",
       "src/lib/map/**/*.test.ts",
       "src/lib/admin/**/*.test.ts",

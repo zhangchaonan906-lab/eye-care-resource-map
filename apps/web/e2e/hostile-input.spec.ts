@@ -30,11 +30,47 @@ async function browserRequest(page: import("@playwright/test").Page, path: strin
     const text = await response.text();
     let result: unknown;
     try { result = JSON.parse(text); } catch { result = text; }
-    return { status: response.status, body: result, raw: text };
+    return { status: response.status, body: result, raw: text, browserUrl: window.location.href };
   }, { requestPath: path, requestMethod: method, payload: body });
 }
 
 test("real public/admin routes reject hostile input safely and preserve real database state", async ({ page }) => {
+  const live = await page.request.get("/api/health/live");
+  expect(live.status()).toBe(200);
+  expect(await live.json()).toEqual({ status: "ok" });
+  expect(live.headers()["cache-control"]).toBe("no-store");
+
+  const ready = await page.request.get("/api/health/ready");
+  expect(ready.status()).toBe(200);
+  expect(await ready.json()).toEqual({ status: "ok" });
+  expect(ready.headers()["cache-control"]).toBe("no-store");
+
+  const version = await page.request.get("/api/version");
+  const versionBody = await version.json() as { commit: string; buildTime: string; environment: string };
+  expect(version.status()).toBe(200);
+  expect(versionBody.commit).toMatch(/^[a-f0-9]{40}$/);
+  expect(versionBody.buildTime).not.toBe("unknown");
+  expect(versionBody.environment).toBe("staging");
+  expect(JSON.stringify(versionBody)).not.toMatch(/postgres|secret|DATABASE_ADMIN_URL/i);
+
+  const protectedAdmin = await page.request.get("/admin/login");
+  const securityHeaders = protectedAdmin.headers();
+  expect(securityHeaders["cache-control"]).toContain("no-store");
+  expect(securityHeaders["x-content-type-options"]).toBe("nosniff");
+  expect(securityHeaders["referrer-policy"]).toBe("strict-origin-when-cross-origin");
+  expect(securityHeaders["permissions-policy"]).toContain("geolocation=(self)");
+  expect(securityHeaders["permissions-policy"]).toContain("camera=()");
+  expect(securityHeaders["permissions-policy"]).toContain("microphone=()");
+  expect(securityHeaders["x-frame-options"]).toBe("DENY");
+  expect(securityHeaders["content-security-policy-report-only"]).toContain("worker-src 'self' blob:");
+  expect(securityHeaders["content-security-policy"]).toBeUndefined();
+  expect(securityHeaders["x-robots-tag"]).toContain("noindex, nofollow");
+  expect(securityHeaders["strict-transport-security"]).toBeUndefined();
+  const robots = await page.request.get("/robots.txt");
+  expect(await robots.text()).toContain("Disallow: /");
+  const adminSession = await page.request.get("/api/admin/session");
+  expect(adminSession.headers()["cache-control"]).toContain("no-store");
+
   await page.goto("/admin/login");
   const before = await pool.query<{ facilities: string; records: string; candidate_id: string }>(
     `SELECT (SELECT count(*)::text FROM app_private.facilities) AS facilities,
@@ -55,6 +91,19 @@ test("real public/admin routes reject hostile input safely and preserve real dat
     expect(JSON.stringify(result.body)).not.toMatch(unsafeLeak);
     if (input.length === 101 || input.includes("\u0000")) expect(result.status).toBe(400);
   }
+
+  const nearbyGet = await browserRequest(page, "/api/nearby?lat=39.123456&lng=116.654321");
+  expect(nearbyGet.status).toBe(405);
+  const nearbyPath = "/api/nearby";
+  const nearbySentinel = await browserRequest(page, nearbyPath, "POST", { lat: 39.123456, lng: 116.654321 });
+  expect(nearbySentinel.status).toBe(200);
+  expect(nearbySentinel.browserUrl).not.toContain("39.123456");
+  expect(nearbySentinel.browserUrl).not.toContain("116.654321");
+  expect(nearbyPath).not.toContain("39.123456");
+  expect(nearbyPath).not.toContain("116.654321");
+  expect(nearbySentinel.raw).not.toContain("39.123456");
+  expect(nearbySentinel.raw).not.toContain("116.654321");
+  expect(JSON.stringify(nearbySentinel.body)).not.toMatch(unsafeLeak);
 
   for (const path of [
     "/api/search?q=clinic&region=null",

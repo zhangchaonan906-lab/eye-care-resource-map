@@ -147,23 +147,31 @@ export function parseFacilityQuery(url: URL) {
   };
 }
 
-const DECIMAL = /^-?(?:\d+(?:\.\d*)?|\.\d+)(?:e[+-]?\d+)?$/i;
-
-function parseFiniteCoordinate(value: string | null, name: "lat" | "lng", min: number, max: number): number {
-  if (value === null || !DECIMAL.test(value.trim())) throw new ValidationError(`${name} 必须是有效经纬度`);
-  const parsed = Number(value);
-  if (!Number.isFinite(parsed) || parsed < min || parsed > max) throw new ValidationError(`${name} 超出有效范围`);
-  return parsed;
-}
-
-export function parseNearbyQuery(url: URL) {
-  const latitude = parseFiniteCoordinate(url.searchParams.get("lat"), "lat", -90, 90);
-  const longitude = parseFiniteCoordinate(url.searchParams.get("lng"), "lng", -180, 180);
-  const rawRadius = url.searchParams.get("radius");
-  const radiusMeters = rawRadius === null ? 10_000 : Number(rawRadius);
-  if (rawRadius !== null && (!DECIMAL.test(rawRadius.trim()) || !Number.isFinite(radiusMeters) || radiusMeters < 500 || radiusMeters > 50_000)) {
+export function parseNearbyBody(value: unknown) {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) {
+    throw new ValidationError("请求正文必须是 JSON 对象");
+  }
+  const record = value as Record<string, unknown>;
+  const coordinate = (input: unknown, name: "lat" | "lng", min: number, max: number) => {
+    if (typeof input !== "number" || !Number.isFinite(input) || input < min || input > max) {
+      throw new ValidationError(`${name} 必须是有效经纬度`);
+    }
+    return input;
+  };
+  const latitude = coordinate(record.lat, "lat", -90, 90);
+  const longitude = coordinate(record.lng, "lng", -180, 180);
+  const radius = record.radius === undefined ? 10_000 : record.radius;
+  if (typeof radius !== "number" || !Number.isFinite(radius) || radius < 500 || radius > 50_000) {
     throw new ValidationError("radius 必须在 500 到 50000 米之间");
   }
-  const limit = parseLimit(url.searchParams.get("limit"), 50, 100);
-  return { latitude, longitude, radiusMeters, category: parseCategory(url.searchParams.get("category")), limit };
+  const limit = record.limit === undefined ? 50 : record.limit;
+  if (typeof limit !== "number" || !Number.isInteger(limit) || limit < 1 || limit > 100) {
+    throw new ValidationError("limit 必须是 1 到 100 之间的整数");
+  }
+  let category: FacilityCategory | undefined;
+  if (record.category !== undefined) {
+    if (typeof record.category !== "string") throw new ValidationError("category 无效");
+    category = parseCategory(record.category) as FacilityCategory;
+  }
+  return { latitude, longitude, radiusMeters: radius, category, limit };
 }

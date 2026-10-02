@@ -364,13 +364,16 @@ describe("EyeHospitalsClient", () => {
     expect(await screen.findByText("620 m")).toBeInTheDocument();
     expect(screen.getByText("附近机构较多，可缩小搜索半径")).toBeInTheDocument();
     await waitFor(() => expect(mapHarness.setFacilities).toHaveBeenCalledWith([nearby], null));
-    await waitFor(() => expect(fetch).toHaveBeenCalledWith(expect.stringContaining("/api/nearby?"), expect.objectContaining({ signal: expect.any(AbortSignal) })));
+    await waitFor(() => expect(fetch).toHaveBeenCalledWith("/api/nearby", expect.objectContaining({ method: "POST", signal: expect.any(AbortSignal) })));
     const nearbyRequest = vi.mocked(fetch).mock.calls.find(([input]) => new URL(String(input), "http://localhost").pathname === "/api/nearby");
     expect(nearbyRequest).toBeDefined();
     const url = new URL(String(nearbyRequest?.[0]), "http://localhost");
-    expect(url.searchParams.get("lat")).toBe("39.9");
-    expect(url.searchParams.get("lng")).toBe("116.4");
-    expect(url.searchParams.has("accuracy")).toBe(false);
+    expect(url.search).toBe("");
+    const nearbyBody = JSON.parse(String(nearbyRequest?.[1]?.body)) as Record<string, unknown>;
+    expect(nearbyBody.lat).toBe(39.9);
+    expect(nearbyBody.lng).toBe(116.4);
+    expect(nearbyBody.radius).toBe(10_000);
+    expect(nearbyBody).not.toHaveProperty("accuracy");
     expect(mapHarness.setUserLocation).toHaveBeenCalledWith({ longitude: 116.4, latitude: 39.9 });
     expect(mapHarness.flyTo).toHaveBeenCalledWith(116.4, 39.9);
     expect(localStorage.length).toBe(0);
@@ -428,12 +431,12 @@ describe("EyeHospitalsClient", () => {
     const getCurrentPosition = vi.fn((success: PositionCallback) => success({ coords: { longitude: 116.4, latitude: 39.9, accuracy: 20 } as GeolocationCoordinates, timestamp: Date.now() } as GeolocationPosition));
     vi.stubGlobal("navigator", { ...navigator, geolocation: { getCurrentPosition } });
     const signals: AbortSignal[] = [];
-    const urls: URL[] = [];
+    const bodies: Record<string, unknown>[] = [];
     vi.stubGlobal("fetch", vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
       const url = new URL(String(input), "http://localhost");
       if (url.pathname === "/api/meta/categories") return Promise.resolve(categories());
       if (url.pathname === "/api/nearby") {
-        urls.push(url);
+        bodies.push(JSON.parse(String(init?.body)) as Record<string, unknown>);
         const signal = init?.signal as AbortSignal;
         signals.push(signal);
         return new Promise<Response>((_resolve, reject) => signal.addEventListener("abort", () => reject(new DOMException("Aborted", "AbortError")), { once: true }));
@@ -443,15 +446,15 @@ describe("EyeHospitalsClient", () => {
     render(<EyeHospitalsClient />);
     fireEvent.click(await screen.findByRole("button", { name: "定位到我" }));
     await waitFor(() => expect(signals).toHaveLength(1));
-    expect(urls[0].searchParams.get("radius")).toBe("10000");
+    expect(bodies[0].radius).toBe(10_000);
     fireEvent.change(screen.getByRole("combobox", { name: "附近搜索半径" }), { target: { value: "5000" } });
     await waitFor(() => expect(signals).toHaveLength(2));
     expect(signals[0].aborted).toBe(true);
-    expect(urls[1].searchParams.get("radius")).toBe("5000");
+    expect(bodies[1].radius).toBe(5000);
     fireEvent.change(screen.getByRole("combobox", { name: "机构类型" }), { target: { value: "eye_specialty_hospital" } });
     await waitFor(() => expect(signals).toHaveLength(3));
     expect(signals[1].aborted).toBe(true);
-    expect(urls[2].searchParams.get("category")).toBe("eye_specialty_hospital");
+    expect(bodies[2].category).toBe("eye_specialty_hospital");
   });
 
   it("shows distinct empty and nearby API failure states without replacing the viewport browser", async () => {

@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { nearbyHandler } from "./handlers";
+import { nearbyPostHandler, nearbyMethodNotAllowed } from "./handlers";
 import type { NearbyFacility, PublicFacilityRepository } from "./types";
 
 const item: NearbyFacility = {
@@ -29,12 +29,14 @@ function repository(overrides: Partial<PublicFacilityRepository> = {}): PublicFa
   };
 }
 
-const base = "https://local.test/api/nearby?lat=39.9&lng=116.4";
+function request(body: unknown, url = "https://local.test/api/nearby") {
+  return new Request(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+}
 
-describe("GET /api/nearby", () => {
-  it("uses WGS84 input, default radius and limit, and returns only public fields plus distance", async () => {
+describe("POST /api/nearby", () => {
+  it("uses WGS84 body coordinates, default radius and limit, and returns only public fields plus distance", async () => {
     const repo = repository({ nearby: vi.fn().mockResolvedValue({ items: [item], truncated: false }) });
-    const response = await nearbyHandler(new Request(base), repo);
+    const response = await nearbyPostHandler(request({ lat: 39.9, lng: 116.4 }), repo);
     expect(response.status).toBe(200);
     expect(response.headers.get("Cache-Control")).toBe("no-store");
     expect(repo.nearby).toHaveBeenCalledWith({ latitude: 39.9, longitude: 116.4, radiusMeters: 10_000, limit: 50 });
@@ -45,66 +47,99 @@ describe("GET /api/nearby", () => {
     });
   });
 
-  it("rejects missing, non-finite, out-of-range coordinates and invalid radius, limit, or category before repository access", async () => {
+  it("keeps the exact coordinates out of the request URL and response", async () => {
+    const input = request({ lat: 39.123456, lng: 116.654321 }, "https://local.test/api/nearby");
+    expect(new URL(input.url).search).toBe("");
+    const response = await nearbyPostHandler(input, repository());
+    const body = await response.text();
+    expect(response.url).toBe("");
+    expect(body).not.toContain("39.123456");
+    expect(body).not.toContain("116.654321");
+  });
+
+  it("does not write nearby request coordinates to application logs", async () => {
+    const methods = ["log", "info", "warn", "error", "debug"] as const;
+    const spies = methods.map((method) => vi.spyOn(console, method));
+    try {
+      await nearbyPostHandler(request({ lat: 39.123456, lng: 116.654321 }), repository());
+      const logOutput = spies.flatMap((spy) => spy.mock.calls.flat()).join(" ");
+      expect(logOutput).not.toContain("39.123456");
+      expect(logOutput).not.toContain("116.654321");
+    } finally {
+      spies.forEach((spy) => spy.mockRestore());
+    }
+  });
+
+  it("rejects malformed, missing, out-of-range coordinates and invalid radius, limit, or category", async () => {
     const repo = repository();
-    const invalidQueries = [
-      "lng=116.4",
-      "lat=39.9",
-      "lat=NaN&lng=116.4",
-      "lat=Infinity&lng=116.4",
-      "lat=90.01&lng=116.4",
-      "lat=-90.01&lng=116.4",
-      "lat=39.9&lng=180.01",
-      "lat=39.9&lng=-180.01",
-      "lat=39.9&lng=116.4&radius=499",
-      "lat=39.9&lng=116.4&radius=50001",
-      "lat=39.9&lng=116.4&limit=101",
-      "lat=39.9&lng=116.4&limit=NaN",
-      "lat=39.9&lng=116.4&category=invalid",
+    const bodies: unknown[] = [
+      {}, { lat: 39.9 }, { lng: 116.4 }, { lat: "NaN", lng: 116.4 },
+      { lat: 90.01, lng: 116.4 }, { lat: -90.01, lng: 116.4 },
+      { lat: 39.9, lng: 180.01 }, { lat: 39.9, lng: -180.01 },
+      { lat: 39.9, lng: 116.4, radius: 499 }, { lat: 39.9, lng: 116.4, radius: 50_001 },
+      { lat: 39.9, lng: 116.4, limit: 101 }, { lat: 39.9, lng: 116.4, limit: 1.5 },
+      { lat: 39.9, lng: 116.4, category: "invalid" }, null, [],
     ];
-    for (const query of invalidQueries) {
-      const response = await nearbyHandler(new Request(`https://local.test/api/nearby?${query}`), repo);
-      expect(response.status, query).toBe(400);
+    for (const body of bodies) {
+      const response = await nearbyPostHandler(request(body), repo);
+      expect(response.status, JSON.stringify(body)).toBe(400);
       expect(response.headers.get("Cache-Control")).toBe("no-store");
       expect((await response.json()).error.code).toBe("INVALID_ARGUMENT");
     }
     expect(repo.nearby).not.toHaveBeenCalled();
   });
 
-  it("passes optional radius, category, and bounded limit", async () => {
+  it("returns 400 for malformed or oversized JSON without echoing the request", async () => {
     const repo = repository();
-    const response = await nearbyHandler(new Request(`${base}&radius=50000&limit=100&category=eye_clinic`), repo);
-    expect(response.status).toBe(200);
-    expect(repo.nearby).toHaveBeenCalledWith({
-      latitude: 39.9,
-      longitude: 116.4,
-      radiusMeters: 50_000,
-      category: "eye_clinic",
-      limit: 100,
-    });
+    const malformed = await nearbyPostHandler(new Request("https://local.test/api/nearby", {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: "{",
+    }), repo);
+    expect(malformed.status).toBe(400);
+    const marker = "private-marker";
+    const body = JSON.stringify({ lat: 39.9, lng: 116.4, extra: marker.repeat(400) });
+    {
+      const response = await nearbyPostHandler(new Request("https://local.test/api/nearby", {
+        method: "POST", headers: { "Content-Type": "application/json" }, body,
+      }), repo);
+      expect(response.status).toBe(400);
+      expect(await response.text()).not.toContain(marker);
+    }
+    expect(repo.nearby).not.toHaveBeenCalled();
   });
 
-  it("returns zero-result and truncation metadata without echoing user coordinates", async () => {
-    const empty = await nearbyHandler(new Request(base), repository());
-    expect(await empty.json()).toMatchObject({ data: [], meta: { count: 0, radiusMeters: 10_000, truncated: false } });
+  it("passes optional radius, category, and bounded limit", async () => {
+    const repo = repository();
+    const response = await nearbyPostHandler(request({ lat: 39.9, lng: 116.4, radius: 50_000, limit: 100, category: "eye_clinic" }), repo);
+    expect(response.status).toBe(200);
+    expect(repo.nearby).toHaveBeenCalledWith({ latitude: 39.9, longitude: 116.4, radiusMeters: 50_000, category: "eye_clinic", limit: 100 });
+  });
 
-    const truncated = await nearbyHandler(
-      new Request("https://local.test/api/nearby?lat=39.91&lng=116.41&limit=1"),
+  it("returns zero-result and truncation metadata without coordinates", async () => {
+    const empty = await nearbyPostHandler(request({ lat: 39.9, lng: 116.4 }), repository());
+    expect(await empty.json()).toMatchObject({ data: [], meta: { count: 0, radiusMeters: 10_000, truncated: false } });
+    const truncated = await nearbyPostHandler(
+      request({ lat: 39.91, lng: 116.41, limit: 1 }),
       repository({ nearby: vi.fn().mockResolvedValue({ items: [item], truncated: true }) }),
     );
-    const body = await truncated.json();
-    expect(body.meta.truncated).toBe(true);
-    expect(JSON.stringify(body)).not.toContain('"latitude":39.91');
-    expect(JSON.stringify(body)).not.toContain('"longitude":116.41');
+    const body = JSON.stringify(await truncated.json());
+    expect(body).not.toContain("39.91");
+    expect(body).not.toContain("116.41");
   });
 
   it("maps repository errors to a generic 500 response", async () => {
-    const response = await nearbyHandler(
-      new Request(base),
+    const response = await nearbyPostHandler(
+      request({ lat: 39.9, lng: 116.4 }),
       repository({ nearby: vi.fn().mockRejectedValue(new Error("private SQL and 39.9,116.4")) }),
     );
     expect(response.status).toBe(500);
     expect(response.headers.get("Cache-Control")).toBe("no-store");
     expect(await response.json()).toEqual({ data: null, meta: null, error: { code: "INTERNAL_ERROR", message: "服务暂不可用" } });
+  });
+
+  it("disables the old coordinate-in-query GET contract", async () => {
+    const response = nearbyMethodNotAllowed();
+    expect(response.status).toBe(405);
+    expect(response.headers.get("Allow")).toBe("POST");
+    expect(response.headers.get("Cache-Control")).toBe("no-store");
   });
 });

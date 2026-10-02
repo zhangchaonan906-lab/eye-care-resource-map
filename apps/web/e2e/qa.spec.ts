@@ -33,7 +33,7 @@ async function mockPublicApi(page: Page) {
   await page.route("**/api/search?**", (route) => route.fulfill({
     json: { data: [facility], meta: { nextCursor: null } },
   }));
-  await page.route("**/api/nearby?**", (route) => route.fulfill({
+  await page.route("**/api/nearby", (route) => route.fulfill({
     json: { data: [{ ...facility, distanceMeters: 1200 }], meta: { truncated: false } },
   }));
 }
@@ -128,10 +128,14 @@ test.describe("P13 public browser QA", () => {
     expect(await context.cookies()).toEqual([]);
 
     const requestFor3km = page.waitForRequest((request) =>
-      request.url().includes("/api/nearby?") && new URL(request.url()).searchParams.get("radius") === "3000",
+      request.url().endsWith("/api/nearby") && request.method() === "POST" &&
+      (request.postDataJSON() as { radius?: number } | null)?.radius === 3000,
     );
     await page.getByRole("combobox", { name: "附近搜索半径" }).selectOption("3000");
-    await requestFor3km;
+    const nearbyRequest = await requestFor3km;
+    expect(nearbyRequest.url()).not.toContain("39.9042");
+    expect(nearbyRequest.url()).not.toContain("116.4074");
+    expect(nearbyRequest.postDataJSON()).toMatchObject({ lat: 39.9042, lng: 116.4074, radius: 3000 });
   });
 
   test("permission denial leaves the map and manual search usable", async ({ page, context }) => {

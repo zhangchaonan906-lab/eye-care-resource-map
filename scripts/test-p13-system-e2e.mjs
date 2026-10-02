@@ -81,7 +81,10 @@ function configureDatabase(passwords, port, webPort) {
   process.env.DATABASE_ADMIN_URL = `postgresql://eye:${passwords.root}@127.0.0.1:${port}/eye`;
   process.env.NEXT_TELEMETRY_DISABLED = "1";
   process.env.PLAYWRIGHT_PORT = String(webPort);
-    process.env.P13_SYSTEM_TEST_MODE = "true";
+  process.env.P13_SYSTEM_TEST_MODE = "true";
+  process.env.APP_ENV = "staging";
+  process.env.RELEASE_COMMIT_SHA = run("git", ["rev-parse", "HEAD"]).stdout.trim();
+  process.env.BUILD_TIMESTAMP = new Date().toISOString();
 }
 
 async function main() {
@@ -153,6 +156,7 @@ async function main() {
       "ADMIN_DATABASE_URL", "SYNC_DATABASE_URL", "DATABASE_ADMIN_URL", "ADMIN_USERNAME",
       "P13_ADMIN_PASSWORD", "ADMIN_PASSWORD_HASH", "ADMIN_SESSION_SECRET", "ADMIN_ACTOR_ID",
       "NEXT_TELEMETRY_DISABLED", "PLAYWRIGHT_PORT", "P13_SYSTEM_TEST_MODE", "P13_CANDIDATE_ID",
+      "APP_ENV", "SITE_URL", "RELEASE_COMMIT_SHA", "BUILD_TIMESTAMP",
       "P13_DUPLICATE_CASE_ID", "P13_LOCATION_ID", "P13_ALTERNATIVE_CANDIDATE_ID",
       "P13_STRESS_FACILITY_ID",
     ]) delete process.env[name];

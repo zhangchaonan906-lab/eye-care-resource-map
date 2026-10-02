@@ -14,3 +14,4 @@ __pycache__/
 .ruff_cache/
 apps/web/test-results/
 apps/web/playwright-report/
+release-manifest.json

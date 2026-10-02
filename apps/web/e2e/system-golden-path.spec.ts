@@ -91,11 +91,11 @@ async function publishDecision(page: Page, id: string, token: string) {
   }, { facilityId: id, csrf: token });
 }
 
-async function queryPublic(page: Page, pathname: string) {
-  return page.evaluate(async (path) => {
-    const response = await fetch(path, { cache: "no-store" });
+async function queryPublic(page: Page, pathname: string, init: RequestInit = {}) {
+  return page.evaluate(async ({ path, requestInit }) => {
+    const response = await fetch(path, { ...requestInit, cache: "no-store" });
     return { status: response.status, body: await response.json() };
-  }, pathname);
+  }, { path: pathname, requestInit: init });
 }
 
 async function pagedFacilityPresence(page: Page, id: string): Promise<boolean> {
@@ -116,7 +116,11 @@ async function pagedFacilityPresence(page: Page, id: string): Promise<boolean> {
 async function visibleInAllPublicSurfaces(page: Page, id: string): Promise<boolean> {
   const [search, nearby, detail, list] = await Promise.all([
     queryPublic(page, `/api/search?q=${encodeURIComponent(facilityName)}&match=exact&limit=20`),
-    queryPublic(page, "/api/nearby?lat=39.908&lng=116.397&radius=10000&limit=100"),
+    queryPublic(page, "/api/nearby", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ lat: 39.908, lng: 116.397, radius: 10_000, limit: 100 }),
+    }),
     queryPublic(page, `/api/facilities/${id}`),
     pagedFacilityPresence(page, id),
   ]);

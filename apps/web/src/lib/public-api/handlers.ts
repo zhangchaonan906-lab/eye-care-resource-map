@@ -1,7 +1,7 @@
 import { FACILITY_CATEGORIES, FACILITY_CATEGORY_LABELS, type PublicFacilityRepository } from "./types";
 import {
   parseFacilityQuery,
-  parseNearbyQuery,
+  parseNearbyBody,
   parseSearchQuery,
   parseUuid,
   ValidationError,
@@ -59,9 +59,27 @@ export async function searchHandler(request: Request, repository: PublicFacility
   }
 }
 
-export async function nearbyHandler(request: Request, repository: PublicFacilityRepository): Promise<Response> {
+export function nearbyMethodNotAllowed(): Response {
+  return Response.json(
+    { data: null, meta: null, error: { code: "METHOD_NOT_ALLOWED", message: "仅支持 POST" } } satisfies ErrorBody,
+    { status: 405, headers: { "Cache-Control": "no-store", Allow: "POST" } },
+  );
+}
+
+export async function nearbyPostHandler(request: Request, repository: PublicFacilityRepository): Promise<Response> {
+  if (request.method !== "POST") return nearbyMethodNotAllowed();
   try {
-    const input = parseNearbyQuery(new URL(request.url));
+    const declaredSize = Number(request.headers.get("content-length") ?? "0");
+    if (declaredSize > 2048) throw new ValidationError("请求正文过大");
+    const rawBody = await request.text();
+    if (new TextEncoder().encode(rawBody).byteLength > 2048) throw new ValidationError("请求正文过大");
+    let body: unknown;
+    try {
+      body = JSON.parse(rawBody);
+    } catch {
+      throw new ValidationError("请求正文必须是有效 JSON");
+    }
+    const input = parseNearbyBody(body);
     const page = await repository.nearby(input);
     return json({
       data: page.items,

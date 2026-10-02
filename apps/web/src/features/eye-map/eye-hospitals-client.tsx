@@ -258,18 +258,24 @@ export function EyeHospitalsClient() {
     if (!userLocation) return;
     const controller = new AbortController();
     let current = true;
-    const params = new URLSearchParams({
-      lat: String(userLocation.latitude),
-      lng: String(userLocation.longitude),
-      radius: String(nearbyRadius),
-      limit: "50",
-    });
-    if (category) params.set("category", category);
+    const body = {
+      lat: userLocation.latitude,
+      lng: userLocation.longitude,
+      radius: nearbyRadius,
+      limit: 50,
+      ...(category ? { category } : {}),
+    };
     void Promise.resolve().then(() => {
       if (!current || controller.signal.aborted) return null;
       setNearbyFacilities([]);
       setNearbyState("loading");
-      return fetch(`/api/nearby?${params.toString()}`, { signal: controller.signal, cache: "no-store" });
+      return fetch("/api/nearby", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+        signal: controller.signal,
+        cache: "no-store",
+      });
     }).then(async (response) => {
       if (!response) return;
       const payload = await readJson(response);
