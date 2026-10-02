@@ -18,6 +18,11 @@ class AdapterRegistry:
             raise ValueError("non-stable fixture revisions are test-only")
         self._fixture_revision = fixture_revision
 
+    @property
+    def fixture_revision(self) -> str:
+        """Return the allowlisted fixture revision used by this registry."""
+        return self._fixture_revision
+
     @classmethod
     def for_tests(cls, *, fixture_revision: str = "stable") -> AdapterRegistry:
         return cls(fixture_revision=fixture_revision, test_only=True)

@@ -15,6 +15,7 @@ def test_registry_only_creates_explicitly_registered_fixture_adapter() -> None:
     assert descriptor.source_key == "fixture"
     assert descriptor.source_name == "Fixture Directory"
     assert descriptor.catalog_url == "https://fixture.invalid/directory"
+    assert registry.fixture_revision == "updated"
 
 
 def test_registry_rejects_database_supplied_module_or_unknown_adapter_key() -> None:

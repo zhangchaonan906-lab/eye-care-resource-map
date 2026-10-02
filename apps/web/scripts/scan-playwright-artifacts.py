@@ -15,8 +15,22 @@ FORBIDDEN = re.compile(
 TEXT_SUFFIXES = {".txt", ".json", ".html", ".xml", ".log", ".md"}
 
 
+def secret_values() -> tuple[bytes, ...]:
+    import os
+
+    values = []
+    for name, value in os.environ.items():
+        if ("SECRET" in name or "PASSWORD" in name or name.endswith("_DATABASE_URL")) and len(value) >= 8:
+            values.append(value.encode("utf-8"))
+    return tuple(values)
+
+
 def scan_bytes(data: bytes, label: str) -> list[str]:
-    return [label] if FORBIDDEN.search(data) else []
+    if FORBIDDEN.search(data):
+        return [label]
+    if any(value in data for value in secret_values()):
+        return [label]
+    return []
 
 
 def main() -> int:
