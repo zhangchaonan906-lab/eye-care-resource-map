@@ -29,7 +29,10 @@ export function verifyMigrationManifest({ migrationsDir, manifestPath }) {
   }
 
   for (const migration of manifest.migrations) {
-    const actual = createHash("sha256").update(readFileSync(join(migrationsDir, migration.filename))).digest("hex");
+    // Git may check these SQL text files out with CRLF on Windows. Hash the
+    // canonical repository text (LF) so CI and local verification agree.
+    const sql = readFileSync(join(migrationsDir, migration.filename), "utf8").replace(/\r\n?/g, "\n");
+    const actual = createHash("sha256").update(sql, "utf8").digest("hex");
     if (actual !== migration.sha256) throw new Error(`Migration checksum mismatch: ${migration.filename}`);
   }
 

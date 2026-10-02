@@ -14,7 +14,7 @@ P13 PR #24 is merged to `main` at `111452519e033df94726809308a9a2349feb48cd`. P1
 6. Set the exact HTTPS `SITE_URL`, deploy, then run `STAGING_SITE_URL=... node scripts/staging-smoke.mjs`. Validate `/api/version`, readiness, security headers, noindex, admin cache behavior, and nearby POST validation.
 7. Run and record a disposable backup/restore drill. No backup from this project may be copied to Git or CI artifacts.
 
-The migration runner is a one-shot release command, never part of a Next.js request. Do not edit an already-applied migration; add a new migration and update its checksum inventory through review. The current runner fails closed when an existing schema has no history registry.
+The migration runner is a one-shot release command, never part of a Next.js request. Do not edit an already-applied migration; add a new migration and update its checksum inventory through review. SHA-256 checksums use canonical LF text so Git's Windows CRLF checkout does not create platform-specific drift. The current runner fails closed when an existing schema has no history registry.
 
 ## Release constraints
 

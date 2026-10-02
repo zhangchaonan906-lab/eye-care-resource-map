@@ -2,20 +2,80 @@
   "formatVersion": 1,
   "maxVersion": "015",
   "migrations": [
-    { "version": "001", "filename": "001_core.sql", "sha256": "189c587c825790e4b86edc14349486ba9b697320d4b92a47655d5c8dba28997f" },
-    { "version": "002", "filename": "002_evidence_location.sql", "sha256": "e4e079e22968d36264cb745140fb0c909b5e0a234665508a39cdb4b3c75ef01d" },
-    { "version": "003", "filename": "003_published_view.sql", "sha256": "e2bff9d0e252521959fa722c21045cd0f15edf8494c40d5ec7c1142956ccdd8d" },
-    { "version": "004", "filename": "004_collector_permissions.sql", "sha256": "c52ef785673a2da07287e70944e6a19dabf33596de452aedc6e3fe02e0c3545f" },
-    { "version": "005", "filename": "005_etl_candidates.sql", "sha256": "41c0993bfb505fc1c59e88c9299253e8328baa7b19af30338b80173628f12398" },
-    { "version": "006", "filename": "006_geocoding.sql", "sha256": "125b2bcf3df49948843b4679109963397e37cea9f812b0b0f7b38f83bfe8045e" },
-    { "version": "007", "filename": "007_source_open_data_rights.sql", "sha256": "d35e0e9c5aa2e395be62ddaa876f2fd5c57c20283bbbd95611525d14e23d34ec" },
-    { "version": "008", "filename": "008_source_file_provenance.sql", "sha256": "66c54f9ed7753e866327d854e1edbda563471d1d99e34c757b5529af9a6ed239" },
-    { "version": "009", "filename": "009_real_export_compatibility.sql", "sha256": "034e0f9cbbdfa8a12170c1641b33051febe0f9fce36031ce038f1746b7bc43d1" },
-    { "version": "010", "filename": "010_etl_import_run_scope.sql", "sha256": "8aa4381a843d773f2c080f9c00f2cf4882dfd0c61b7477183bf4523397d1cb5c" },
-    { "version": "011", "filename": "011_public_api.sql", "sha256": "2fb8cfde048546fb54d05826863d687dcbdb845e9556fb1888902df6c47b43fc" },
-    { "version": "012", "filename": "012_nearby_api.sql", "sha256": "bbed88091555a9fdc95619b37a35fe10b76e452d72bc34b3b72c74d962f19970" },
-    { "version": "013", "filename": "013_admin_review.sql", "sha256": "32109375e760a39df9ccfa37044172ea6940ce66dc183de6cf4bd5bc59c5ad96" },
-    { "version": "014", "filename": "014_incremental_sync.sql", "sha256": "b72889460d1f712a271cf8172769a2393dfbf313510564a72f5a478606efde20" },
-    { "version": "015", "filename": "015_public_query_performance.sql", "sha256": "a66b6c45a396a4c71bc01f973819f1ec25049e2d6b8634488a92a8eedca3039a" }
+    {
+      "version": "001",
+      "filename": "001_core.sql",
+      "sha256": "5fbd5e3cf9bc8fd4a35a62fc159055e5d4cd3d9420932c00e47b0d88e0f85ec8"
+    },
+    {
+      "version": "002",
+      "filename": "002_evidence_location.sql",
+      "sha256": "a53f5222148f5a769f6bd847770fdadb08276a2cdcecd938ea5d704a890ddda8"
+    },
+    {
+      "version": "003",
+      "filename": "003_published_view.sql",
+      "sha256": "8c623df1f8404e0cf58933aa734e680bd5d29f475d07474c076655eb05b149ea"
+    },
+    {
+      "version": "004",
+      "filename": "004_collector_permissions.sql",
+      "sha256": "593e17067c4a86461918d23f9669b087b3cee31bd23425047379549b4a909eda"
+    },
+    {
+      "version": "005",
+      "filename": "005_etl_candidates.sql",
+      "sha256": "b6598a5696a1b1d68a500835da6d546c5b408b5763a4c8fb97cb3e60eec0c421"
+    },
+    {
+      "version": "006",
+      "filename": "006_geocoding.sql",
+      "sha256": "20ce674dfd6d06a871c43bf75645b14b127f26cda71caf3f6b2a81b27b7cfbd6"
+    },
+    {
+      "version": "007",
+      "filename": "007_source_open_data_rights.sql",
+      "sha256": "8d18051a178c9c7b74229fbaab4cb346844de8ca6262b045ddab6b611aaf562f"
+    },
+    {
+      "version": "008",
+      "filename": "008_source_file_provenance.sql",
+      "sha256": "2a00fc9476f773f4b30fc7c20c17ac0b01cbf35ad241f4999dae45bb76ef4670"
+    },
+    {
+      "version": "009",
+      "filename": "009_real_export_compatibility.sql",
+      "sha256": "fd904a22eeaa85ef7a09bdc92d4f29aed91e5d1b4e7369a0fda28a26a7741dbe"
+    },
+    {
+      "version": "010",
+      "filename": "010_etl_import_run_scope.sql",
+      "sha256": "9a5d638cb8e2f26a113c3c1132ab33bcea68f65b708b898ed9a62b35d0de8be3"
+    },
+    {
+      "version": "011",
+      "filename": "011_public_api.sql",
+      "sha256": "30b35f9496bfcbb77718acb3e0b763bbfdbda7a35826164bc21fffdf9f8196f5"
+    },
+    {
+      "version": "012",
+      "filename": "012_nearby_api.sql",
+      "sha256": "d8dc1baa24ad9c70ab52aa22f215835d25877c8566d2e9aa90577c957e02e599"
+    },
+    {
+      "version": "013",
+      "filename": "013_admin_review.sql",
+      "sha256": "c15173b603ebf4b0c3cf9dfa6580b10aa1c8c80713097dee2501b1770fdec21f"
+    },
+    {
+      "version": "014",
+      "filename": "014_incremental_sync.sql",
+      "sha256": "ab8a7d392a41aaf320471fbabc00f61ba4defaf7d6ab82a9af368823f33d8c8d"
+    },
+    {
+      "version": "015",
+      "filename": "015_public_query_performance.sql",
+      "sha256": "e9469deda60a43a97b8890a01f168c76fe0f85f31acd29272eb177b82866a02d"
+    }
   ]
 }

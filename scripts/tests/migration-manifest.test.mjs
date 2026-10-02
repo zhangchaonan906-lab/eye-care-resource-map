@@ -33,6 +33,20 @@ test("migration checksum drift fails closed", () => {
   }
 });
 
+test("migration checksum is stable across Windows and Unix line endings", () => {
+  const temporary = mkdtempSync(join(tmpdir(), "p14-migration-eol-"));
+  try {
+    const migrationsDir = join(temporary, "migrations");
+    cpSync(source, migrationsDir, { recursive: true });
+    const file = join(migrationsDir, "001_core.sql");
+    const unixText = readFileSync(file, "utf8").replace(/\r\n?/g, "\n");
+    writeFileSync(file, unixText.replace(/\n/g, "\r\n"));
+    assert.equal(verifyMigrationManifest({ migrationsDir, manifestPath: join(migrationsDir, "manifest.json") }).maxVersion, "015");
+  } finally {
+    rmSync(temporary, { recursive: true, force: true });
+  }
+});
+
 test("unexpected migration files fail closed", () => {
   const temporary = mkdtempSync(join(tmpdir(), "p14-migration-extra-"));
   try {
