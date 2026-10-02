@@ -24,6 +24,10 @@ export default defineConfig({
       ADMIN_SESSION_SECRET: process.env.ADMIN_SESSION_SECRET ?? "",
       NEXT_TELEMETRY_DISABLED: "1",
       P13_SYSTEM_TEST_MODE: process.env.P13_SYSTEM_TEST_MODE ?? "",
+      APP_ENV: process.env.APP_ENV ?? "local",
+      SITE_URL: process.env.SITE_URL ?? "",
+      RELEASE_COMMIT_SHA: process.env.RELEASE_COMMIT_SHA ?? "",
+      BUILD_TIMESTAMP: process.env.BUILD_TIMESTAMP ?? "",
     },
   },
 });

@@ -1,0 +1,21 @@
+{
+  "formatVersion": 1,
+  "maxVersion": "015",
+  "migrations": [
+    { "version": "001", "filename": "001_core.sql", "sha256": "189c587c825790e4b86edc14349486ba9b697320d4b92a47655d5c8dba28997f" },
+    { "version": "002", "filename": "002_evidence_location.sql", "sha256": "e4e079e22968d36264cb745140fb0c909b5e0a234665508a39cdb4b3c75ef01d" },
+    { "version": "003", "filename": "003_published_view.sql", "sha256": "e2bff9d0e252521959fa722c21045cd0f15edf8494c40d5ec7c1142956ccdd8d" },
+    { "version": "004", "filename": "004_collector_permissions.sql", "sha256": "c52ef785673a2da07287e70944e6a19dabf33596de452aedc6e3fe02e0c3545f" },
+    { "version": "005", "filename": "005_etl_candidates.sql", "sha256": "41c0993bfb505fc1c59e88c9299253e8328baa7b19af30338b80173628f12398" },
+    { "version": "006", "filename": "006_geocoding.sql", "sha256": "125b2bcf3df49948843b4679109963397e37cea9f812b0b0f7b38f83bfe8045e" },
+    { "version": "007", "filename": "007_source_open_data_rights.sql", "sha256": "d35e0e9c5aa2e395be62ddaa876f2fd5c57c20283bbbd95611525d14e23d34ec" },
+    { "version": "008", "filename": "008_source_file_provenance.sql", "sha256": "66c54f9ed7753e866327d854e1edbda563471d1d99e34c757b5529af9a6ed239" },
+    { "version": "009", "filename": "009_real_export_compatibility.sql", "sha256": "034e0f9cbbdfa8a12170c1641b33051febe0f9fce36031ce038f1746b7bc43d1" },
+    { "version": "010", "filename": "010_etl_import_run_scope.sql", "sha256": "8aa4381a843d773f2c080f9c00f2cf4882dfd0c61b7477183bf4523397d1cb5c" },
+    { "version": "011", "filename": "011_public_api.sql", "sha256": "2fb8cfde048546fb54d05826863d687dcbdb845e9556fb1888902df6c47b43fc" },
+    { "version": "012", "filename": "012_nearby_api.sql", "sha256": "bbed88091555a9fdc95619b37a35fe10b76e452d72bc34b3b72c74d962f19970" },
+    { "version": "013", "filename": "013_admin_review.sql", "sha256": "32109375e760a39df9ccfa37044172ea6940ce66dc183de6cf4bd5bc59c5ad96" },
+    { "version": "014", "filename": "014_incremental_sync.sql", "sha256": "b72889460d1f712a271cf8172769a2393dfbf313510564a72f5a478606efde20" },
+    { "version": "015", "filename": "015_public_query_performance.sql", "sha256": "a66b6c45a396a4c71bc01f973819f1ec25049e2d6b8634488a92a8eedca3039a" }
+  ]
+}

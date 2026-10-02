@@ -211,3 +211,79 @@ jobs:
           path: apps/web/test-results/
           if-no-files-found: ignore
           retention-days: 7
+
+  p14-release-check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: apps/web/package-lock.json
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install PostgreSQL client for backup and migration tooling
+        run: sudo apt-get update && sudo apt-get install -y postgresql-client
+
+      - name: Install Web dependencies
+        working-directory: apps/web
+        run: npm ci --ignore-scripts
+
+      - name: Web tests, audit, lint, typecheck, and build
+        working-directory: apps/web
+        run: |
+          npm audit --audit-level=high
+          npm test
+          npm run lint
+          npm run typecheck
+          npm run build
+
+      - name: Install collector and audit tools
+        run: |
+          python -m pip install --upgrade pip setuptools
+          python -m pip install --index-url https://pypi.org/simple -e "services/collector[dev]"
+          python -m pip install pip-audit
+
+      - name: Collector tests, audit, lint, and typecheck
+        working-directory: services/collector
+        run: |
+          python -m pytest tests -m "not database and not etl_database and not geocode_database" -q
+          python -m ruff check src tests
+          python -m mypy src/eye_collector
+          pip-audit --local
+          eye-collector --help
+
+      - name: Release engineering tests and fail-closed guards
+        run: |
+          node --test scripts/tests/*.test.mjs
+          node scripts/secret-scan.mjs
+          if node scripts/check-production-release.mjs; then echo "Production guard unexpectedly passed"; exit 1; else echo "Production guard correctly blocked launch"; fi
+          if node scripts/check-staging-release.mjs; then echo "Staging guard unexpectedly passed without credentials"; exit 1; else echo "Staging guard correctly reports missing credentials"; fi
+          if node scripts/staging-smoke.mjs; then echo "Cloud staging smoke unexpectedly ran without a target"; exit 1; else code=$?; test "$code" -eq 2; fi
+          APP_ENV=ci node scripts/generate-release-manifest.mjs
+          node scripts/secret-scan.mjs
+          git diff --check origin/main...HEAD
+
+      - name: Build non-root collector image
+        run: docker build --no-cache -f services/collector/Dockerfile -t eye-collector:p14-ci .
+
+      - name: Verify collector image runs as non-root
+        run: |
+          test "$(docker run --rm --entrypoint id eye-collector:p14-ci -u)" != "0"
+          docker run --rm eye-collector:p14-ci --help
+
+      - name: P1–P13 database regression and P14 disposable backup/restore drill
+        run: bash scripts/test-db.sh
+
+      - name: Scan release static assets and Docker context
+        run: node scripts/secret-scan.mjs

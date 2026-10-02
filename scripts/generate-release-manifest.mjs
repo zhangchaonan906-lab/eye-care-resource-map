@@ -1,0 +1,12 @@
+import { readFileSync, writeFileSync } from "node:fs";
+import { resolve } from "node:path";
+import { spawnSync } from "node:child_process";
+const root = resolve(import.meta.dirname, "..");
+const migration = JSON.parse(readFileSync(resolve(root, "db/migrations/manifest.json"), "utf8"));
+const gates = JSON.parse(readFileSync(resolve(root, "docs/operations/p14-release-gates.json"), "utf8"));
+const git = spawnSync("git", ["rev-parse", "HEAD"], { cwd: root, encoding: "utf8" });
+if (git.status !== 0) throw new Error("Unable to identify release commit");
+const result = { commit: git.stdout.trim(), migrationMaxVersion: migration.maxVersion, buildTime: new Date().toISOString(), environment: process.env.APP_ENV ?? "unknown", webVersion: "P14-A", collectorVersion: "0.1.0", releaseGates: Object.fromEntries(Object.entries(gates.gates).map(([name, gate]) => [name, gate.status])) };
+const output = resolve(process.argv[2] ?? "release-manifest.json");
+writeFileSync(output, `${JSON.stringify(result, null, 2)}\n`, { mode: 0o600 });
+console.log(`Release manifest written: ${output}`);

@@ -1,0 +1,26 @@
+{
+  "formatVersion": 1,
+  "environment": "staging-engineering",
+  "gates": {
+    "SYSTEM_QA": { "status": "PASS", "evidence": "P13 system E2E passed and PR #24 was squash merged to main." },
+    "BUILD": { "status": "PASS", "evidence": "Web production build, unit tests, lint, and typecheck passed locally on the P14 branch; CI remains the merge gate." },
+    "SECURITY_SCANS": { "status": "PASS", "evidence": "Web npm audit reported zero vulnerabilities; isolated collector pip-audit reported none; repository/Docker-context/Web static secret scan passed. CI remains the merge gate." },
+    "STAGING_HEALTH": { "status": "PASS", "evidence": "Liveness/readiness routes and health response contract have unit coverage." },
+    "NO_REAL_SOURCE_AUTOMATION": { "status": "PASS", "evidence": "P14 uses synthetic fixtures; no real source schedules or import runs were enabled." },
+    "REAL_PUBLISHED_DATA_SAMPLE": { "status": "PENDING", "evidence": "Insufficient real published sample; P14-A uses synthetic fixtures only." },
+    "REAL_DATA_QUALITY_SAMPLE": { "status": "PENDING", "evidence": "Real-data QA remains pending." },
+    "PRODUCTION_BASEMAP": { "status": "PENDING", "evidence": "Only placeholder/development basemap; provider rights and attribution not approved." },
+    "PRODUCTION_COORDINATE_PROVIDER": { "status": "PENDING", "evidence": "No production geocoder selected or called." },
+    "PRODUCTION_SOURCE_COVERAGE": { "status": "PENDING", "evidence": "National source coverage is incomplete." },
+    "NEARBY_POST_CONTRACT": { "status": "PASS", "evidence": "Nearby accepts POST JSON; GET returns 405; sentinel is absent from browser request URLs." },
+    "DEPLOYMENT_NEARBY_PRIVACY": { "status": "PENDING", "evidence": "Application does not log request bodies; staging provider access-log body capture/retention could not be verified." },
+    "PRODUCTION_SECURITY_HEADERS": { "status": "PENDING", "evidence": "Headers are configured; actual production HTTPS deployment is not available for verification." },
+    "PRODUCTION_RATE_LIMITING": { "status": "PENDING", "evidence": "No verified distributed public API limiter is configured." },
+    "BACKUP_RESTORE": { "status": "PASS", "evidence": "Local disposable PostGIS drill backed up synthetic data, restored to a recreated empty database, matched object counts, and passed the public API query smoke. This is not a cloud backup or production recovery SLA." },
+    "MONITORING": { "status": "PENDING", "evidence": "Monitoring contract documented; external alert delivery is not configured." },
+    "STAGING_SMOKE": { "status": "PENDING", "evidence": "No STAGING_SITE_URL or staging credentials were present; cloud smoke was not run." },
+    "STAGING_DATABASE": { "status": "PENDING", "evidence": "No isolated staging PostgreSQL credentials were present." },
+    "WORKER_HOSTING": { "status": "PENDING", "evidence": "Container artifact is configured; no worker host is selected or deployed." },
+    "STAGING_DEPLOYMENT": { "status": "PENDING", "evidence": "Deployment blocked because staging credentials are unavailable." }
+  }
+}

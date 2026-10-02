@@ -1,12 +1,14 @@
 $ErrorActionPreference = 'Stop'
 $repoRoot = Split-Path -Parent $PSScriptRoot
 $projectName = 'eye-db-check-' + [guid]::NewGuid().ToString('N').Substring(0, 8)
+$backupRoot = Join-Path ([IO.Path]::GetTempPath()) ('eye-map-p14-backup-' + [guid]::NewGuid().ToString('N'))
 $environmentNames = @(
   'EYE_MAP_POSTGRES_PASSWORD', 'EYE_MAP_DB_PORT', 'DATABASE_URL', 'ETL_DATABASE_URL',
   'DATABASE_ADMIN_URL', 'GEOCODE_DATABASE_URL', 'PUBLIC_API_DATABASE_URL',
   'ADMIN_DATABASE_URL', 'SYNC_DATABASE_URL', 'P13_COLLECTOR_PASSWORD', 'P13_ETL_PASSWORD',
-  'P13_GEOCODE_PASSWORD', 'P13_PUBLIC_API_PASSWORD', 'P13_ADMIN_DATABASE_PASSWORD', 'P13_SYNC_PASSWORD'
+  'P13_GEOCODE_PASSWORD', 'P13_PUBLIC_API_PASSWORD', 'P13_ADMIN_DATABASE_PASSWORD', 'P13_SYNC_PASSWORD', 'APP_ENV'
 )
+$environmentNames += @('P14_BACKUP_DIR','P14_PG_TOOL_CONTAINER','RESTORE_DATABASE_URL','RESTORE_CONFIRM','RESTORE_BACKUP_FILE')
 $previousEnvironment = @{}
 foreach ($name in $environmentNames) { $previousEnvironment[$name] = [Environment]::GetEnvironmentVariable($name, 'Process') }
 $portProbe = [Net.Sockets.TcpListener]::new([Net.IPAddress]::Loopback, 0)
@@ -42,6 +44,24 @@ try {
     if ($LASTEXITCODE -ne 0) { throw 'Disposable PostGIS did not become healthy.' }
     node scripts/db-test-bootstrap.mjs $projectName
     if ($LASTEXITCODE -ne 0) { throw 'P1–P13 database bootstrap/regression SQL failed.' }
+    $containerId = (docker compose -p $projectName ps -q db | Out-String).Trim()
+    docker compose -p $projectName exec -T db dropdb -U eye --if-exists p14_migration_clean
+    if ($LASTEXITCODE -ne 0) { throw 'Could not clear the disposable migration target.' }
+    docker compose -p $projectName exec -T db createdb -U eye --template=template0 p14_migration_clean
+    if ($LASTEXITCODE -ne 0) { throw 'Could not create the clean migration target.' }
+    docker compose -p $projectName exec -T db psql -h 127.0.0.1 -U eye -d p14_migration_clean -v ON_ERROR_STOP=1 -c 'CREATE EXTENSION postgis WITH SCHEMA public'
+    if ($LASTEXITCODE -ne 0) { throw 'Could not provision the required PostGIS extension in the clean migration target.' }
+    $sourceAdminUrl = $env:DATABASE_ADMIN_URL
+    $env:DATABASE_ADMIN_URL = $sourceAdminUrl -replace '/eye$','/p14_migration_clean'
+    $env:P14_PG_TOOL_CONTAINER = $containerId
+    node scripts/apply-migrations.mjs
+    if ($LASTEXITCODE -ne 0) { throw 'Ordered migration application failed on an empty database.' }
+    node scripts/apply-migrations.mjs
+    if ($LASTEXITCODE -ne 0) { throw 'Migration runner idempotent replay verification failed.' }
+    $migrationCount = (docker compose -p $projectName exec -T db psql -h 127.0.0.1 -U eye -d p14_migration_clean -A -t -c "SELECT count(*) FROM public.schema_migrations" | Out-String).Trim()
+    if ($LASTEXITCODE -ne 0 -or $migrationCount -ne '15') { throw "Migration registry count is not 15: $migrationCount" }
+    $env:DATABASE_ADMIN_URL = $sourceAdminUrl
+    Remove-Item Env:P14_PG_TOOL_CONTAINER -ErrorAction SilentlyContinue
     py -m pip install -e 'services/collector[dev]'
     if ($LASTEXITCODE -ne 0) { throw 'Collector development dependencies could not be installed.' }
     Push-Location (Join-Path $repoRoot 'services/collector')
@@ -72,11 +92,50 @@ try {
       if ($LASTEXITCODE -ne 0) { throw 'Web database tests failed.' }
     }
     finally { Pop-Location }
+
+    New-Item -ItemType Directory -Path $backupRoot | Out-Null
+    docker compose -p $projectName exec -T db psql -h 127.0.0.1 -U eye -d eye -v ON_ERROR_STOP=1 -f /workspace/db/tests/p14_restore_drill_seed.sql
+    if ($LASTEXITCODE -ne 0) { throw 'Could not seed the synthetic restore facility.' }
+    docker compose -p $projectName exec -T db psql -h 127.0.0.1 -U eye -d eye -v ON_ERROR_STOP=1 -c "INSERT INTO app_private.audit_events(entity,entity_id,action) VALUES('p14_restore_drill',gen_random_uuid(),'synthetic_backup_drill')"
+    if ($LASTEXITCODE -ne 0) { throw 'Could not seed synthetic restore audit record.' }
+    $countsSql = "SELECT (SELECT count(*) FROM public.published_facility_api),(SELECT count(*) FROM app_private.audit_events),(SELECT count(*) FROM app_private.source_records),(SELECT count(*) FROM app_private.facility_locations),(SELECT count(*) FROM public.schema_migrations)"
+    $before = (docker compose -p $projectName exec -T db psql -h 127.0.0.1 -U eye -d eye -A -t -F '|' -c $countsSql | Out-String).Trim() -replace '\s',''
+    if ($before -notmatch '^[1-9][0-9]*\|[1-9][0-9]*\|[1-9][0-9]*\|[1-9][0-9]*\|15$') { throw "Synthetic restore drill baseline was incomplete: $before" }
+    $containerId = (docker compose -p $projectName ps -q db | Out-String).Trim()
+    $env:APP_ENV = 'ci'
+    $env:P14_BACKUP_DIR = $backupRoot
+    $env:P14_PG_TOOL_CONTAINER = $containerId
+    node scripts/backup-db.mjs
+    if ($LASTEXITCODE -ne 0) { throw 'P14 backup tool failed.' }
+    $backupFile = (Get-ChildItem -LiteralPath $backupRoot -Filter 'eye-map-ci-*.dump' | Select-Object -First 1).FullName
+    docker compose -p $projectName exec -T db dropdb -U eye --if-exists p14_restore_target
+    if ($LASTEXITCODE -ne 0) { throw 'Could not clear the disposable restore target.' }
+    docker compose -p $projectName exec -T db createdb -U eye --template=template0 p14_restore_target
+    if ($LASTEXITCODE -ne 0) { throw 'Could not create an empty disposable restore target.' }
+    $env:RESTORE_DATABASE_URL = $env:DATABASE_ADMIN_URL -replace '/eye$','/p14_restore_target'
+    $env:RESTORE_CONFIRM = 'p14_restore_target'
+    $env:RESTORE_BACKUP_FILE = $backupFile
+    $restoreTimer = [Diagnostics.Stopwatch]::StartNew()
+    node scripts/restore-db.mjs
+    if ($LASTEXITCODE -ne 0) { throw 'P14 restore tool failed.' }
+    $restoreTimer.Stop()
+    $after = (docker compose -p $projectName exec -T db psql -h 127.0.0.1 -U eye -d p14_restore_target -A -t -F '|' -c $countsSql | Out-String).Trim() -replace '\s',''
+    if ($LASTEXITCODE -ne 0 -or $before -ne $after) { throw "Restored counts differ: before=$before after=$after" }
+    $publicCount = (docker compose -p $projectName exec -T db psql -q -h 127.0.0.1 -U eye -d p14_restore_target -A -t -c "SET ROLE eye_public_api_runtime; SELECT count(*) FROM public.query_published_facilities_bbox(116.3,39.8,116.5,40.0,NULL,NULL,NULL,10); RESET ROLE" | Out-String).Trim() -replace '\s',''
+    if ($LASTEXITCODE -ne 0 -or [int]$publicCount -lt 1) { throw 'Restored public API query smoke failed.' }
+    Write-Host "P14 disposable backup/restore drill PASS; restore duration ms: $($restoreTimer.ElapsedMilliseconds); restored counts: $after"
+    docker compose -p $projectName exec -T db dropdb -U eye p14_restore_target
+    if ($LASTEXITCODE -ne 0) { throw 'Could not remove the disposable restore target.' }
   }
   finally {
     docker compose -p $projectName down --volumes --remove-orphans
     if ($LASTEXITCODE -ne 0) { throw 'Disposable database cleanup failed.' }
     Pop-Location
+    $tempRoot = [IO.Path]::GetFullPath([IO.Path]::GetTempPath())
+    $resolvedBackupRoot = [IO.Path]::GetFullPath($backupRoot)
+    if ($resolvedBackupRoot.StartsWith($tempRoot, [StringComparison]::OrdinalIgnoreCase) -and (Test-Path -LiteralPath $resolvedBackupRoot)) {
+      Remove-Item -LiteralPath $resolvedBackupRoot -Recurse -Force
+    }
   }
 }
 finally {
@@ -86,4 +145,4 @@ finally {
     else { [Environment]::SetEnvironmentVariable($name, $oldValue, 'Process') }
   }
 }
-Write-Host 'P1–P13 disposable database checks passed.'
+Write-Host 'P1–P14 disposable database checks passed.'

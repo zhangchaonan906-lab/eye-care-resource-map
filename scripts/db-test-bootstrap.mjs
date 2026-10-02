@@ -1,4 +1,5 @@
 import { spawnSync } from "node:child_process";
+import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
 const root = resolve(import.meta.dirname, "..");
@@ -28,6 +29,10 @@ function compose(...args) {
 
 function psql(file, variables = []) {
   compose("exec", "-T", "db", "psql", "-h", "127.0.0.1", "-U", "eye", "-d", "eye", "-v", "ON_ERROR_STOP=1", ...variables.flatMap((value) => ["-v", value]), "-f", file);
+}
+
+function psqlCommand(sql) {
+  compose("exec", "-T", "db", "psql", "-h", "127.0.0.1", "-U", "eye", "-d", "eye", "-v", "ON_ERROR_STOP=1", "-c", sql);
 }
 
 const migrations = [
@@ -68,5 +73,10 @@ for (const file of [
   "011_public_api.sql", "012_nearby_api.sql", "013_admin_review.sql",
   "014_incremental_sync.sql", "p13_synthetic_performance.sql",
 ]) psql(`/workspace/db/tests/${file}`);
+
+const migrationManifest = JSON.parse(readFileSync(resolve(root, "db/migrations/manifest.json"), "utf8"));
+psqlCommand("CREATE TABLE public.schema_migrations (version text PRIMARY KEY CHECK (version ~ '^[0-9]{3}$'), filename text NOT NULL UNIQUE, checksum text NOT NULL CHECK (checksum ~ '^[a-f0-9]{64}$'), applied_at timestamptz NOT NULL DEFAULT now()); REVOKE ALL ON public.schema_migrations FROM PUBLIC;");
+const migrationValues = migrationManifest.migrations.map((item) => `('${item.version}', '${item.filename}', '${item.sha256}')`).join(",");
+psqlCommand(`INSERT INTO public.schema_migrations(version, filename, checksum) VALUES ${migrationValues}`);
 
 console.log("Disposable P1–P13 database bootstrap and regression SQL passed.");
