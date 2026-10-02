@@ -1,0 +1,32 @@
+# National Harvest Round 1 — File Manifest
+
+As of 2026-10-03. This is a metadata-only manifest. Original files are stored outside Git under the user-local `EyeCareResourceMap\NationalHarvest` directory. No raw data, absolute local paths, facility names, contact values, or credentials are included here. The SHA-256 values below are over original file bytes; the Shenzhen ZIP member has a separate XLSX-member hash.
+
+`obtained_at` describes the original acquisition record when documented. A copied file's filesystem timestamp is not treated as acquisition time. `historical_import_run_id` refers only to the earlier isolated P5 pilot and does not mean this harvest created a new import run. The two P5 file acquisition records name `zhangchaonan906-lab`; for older P6 files where the operator field was not retained, the operator is explicitly `not_recorded`.
+
+| Source key / coverage | Original filename | Provider / dataset page | Acquired / source updated | Bytes / SHA-256 | Format / workbook | Rows × columns / exact headers | Source status / current disposition |
+|---|---|---|---|---|---|---|---|
+| `beijing-open-data-designated-medical-institutions` / Beijing bounded pilot | `北京市医疗保障局-定点医疗机构信息.xlsx` | 北京市公共数据开放平台；[dataset](https://data.beijing.gov.cn/zyml/ajg/sybj/17425.htm) | Obtained 2026-10-01T19:06:27+08:00 (P5 record); source update date retained in the prior import record but not duplicated in this report | 493,514 / `49848ce24856fb28ed542f46c0e5f805c35b19c3fcea0d85d97d0734487fa918` | XLSX; one sheet `北京市医疗保障局-定点医疗机构信息`; no macro part reported in prior inspection | 4,876 × 10; `序号, 医院名称, 定点医疗机构编码, 所属区, 医院类别, 医院等级, 医院地址, 数据唯一记录号, 数据创建时间, 数据更新时间` | `APPROVED` / `manual_only`; 50-row historical pilot only. Existing pilot run `34a7aba6-0813-4fbd-aac7-fed1bf5224f6`; no new run this harvest. |
+| `shenzhen-open-data-baoan-hospital-basic-information` / Bao'an district only | `宝安区-医院基本信息20261001071251275982.zip` | 深圳市政府数据开放平台；[dataset](https://opendata.sz.gov.cn/data/dataSet/toDataDetails/29200_02800636) | Obtained 2026-10-01T19:12:52+08:00 (P5 record); 2017–2024 data period per P5 review | 35,368 / `9b9554a8553676c906b8b364987ca11d929a204a02fdd3503e23be1cf86348d7` | ZIP containing one XLSX `宝安区-医院基本信息_2920002800636.xlsx`, 36,027 bytes, member SHA-256 `55a06fd088b436506a4c5692424a07e487159300ad6f191fce046bdbcdd1a129`; sheets `资源描述信息, 数据集1`; no macro part reported in prior inspection | 27 × 17; `文档ID, 名称, 所在区县, 主管部门, 详细地址, 邮政编码, 联系电话, 电子邮箱, 网站地址, 性质, 级别, 等级, 是否医保指定医院, 医院简介, 所获表彰与荣誉, 医疗优势与特长, 交通情况` | `APPROVED` / `manual_only`; raw transfer/redistribution not allowed; deletion on withdrawal. Historical pilot run `9f549a6a-7aa7-4d0e-ba0f-6980b293a122`; no new run this harvest. |
+| `tianjin-registration-local-preview` / municipality source scope unknown | `医疗机构执业登记信息.xlsx` | 天津市卫生健康委；[dataset](https://open.data.tj.gov.cn/sjj/8e3f7e670ea9492dbc480e2c68683ce5.htm) | Prior operator download; exact obtained-at not independently recorded for this pass; source update date not confirmed | 16,147 / `c98901dfa5f76e16cc7e968b6bd9a377c02ab0050d82128c542aeda3f214b0ea` | XLSX; sheets `医疗机构执业登记, Sheet3`; macro part not detected in prior P6-TJ1 inspection | 36 × 7; `批准时间, 机构名称, 地址, 诊疗科目, 床位数, 类别, 所有制形式` | `UNKNOWN` / `manual_only`; read-only inspect only; no import. Coverage stays `municipality_source_scope_unknown`. |
+| `guangzhou-gd-tcm-bureau-issued-institutions-20260713` / Guangzhou licensing-authority subset | `广州市内广东省中医药局发证的医疗机构信息（数据截至2026年7月13日）.xlsx` | 广州市卫生健康委员会 public attachment; [release page](https://wjw.gz.gov.cn/fwcx/yljgcx/content/post_10908062.html) | 2026-10-02T00:44:56+08:00 (local acquisition timestamp in P6-N3 record); records as of 2026-07-13 | 14,478 / `001c36e76d3656849d1858e69a987b98b9fdf7079edf09ff621d89b8adda1dfd` | XLSX; sheets `Sheet1, Sheet2, Sheet3`; only Sheet1 contains rows; no VBA macro part found | 7 × 14; `序号, 机构名称, 登记号, 机构第二名称, 机构地址, 法人姓名, 负责人姓名, 行政区划, 机构类别, 机构级别, 经营性质, 床位数, 牙椅数, 诊疗科目名称` | `UNKNOWN`; read-only inspect and in-memory minimized-field preview only. Personal-name columns were not mapped or stored. Not all Guangzhou. |
+
+## Acquisition provenance details
+
+| Source | Acquisition method | Operator | Source update date | Import-run link |
+|---|---|---|---|---|
+| Beijing designated institutions | `official_portal_manual_download` (P5 acquisition record) | `zhangchaonan906-lab` | Retained in historical P5 import provenance; exact date not copied into this summary | Historical formal P5 import `34a7aba6-0813-4fbd-aac7-fed1bf5224f6` |
+| Shenzhen Bao'an hospitals | `official_portal_manual_download` (P5 acquisition record) | `zhangchaonan906-lab` | Dataset record range 2017–2024; specific source update date not separately recorded here | Historical formal P5 import `9f549a6a-7aa7-4d0e-ba0f-6980b293a122` |
+| Tianjin municipal registration | Prior manual official-platform acquisition; exact acquisition record fields incomplete | `not_recorded` | Not confirmed | None recorded |
+| Guangzhou TCM-bureau-issued subset | Direct public XLSX attachment from official Guangzhou Health Commission page | `not_recorded` | Dataset as-of 2026-07-13; page published 2026-07-20 | None; UNKNOWN source was not imported |
+
+## Inspection aggregates
+
+| Source | Empty names / addresses | Duplicate key groups | Distinct normalized name groups | Explicit specialty evidence rows | Adapter / P3 note |
+|---|---:|---:|---:|---:|---|
+| Beijing full file | 0 / 0 | 0 | 4,876 | 0 (no specialty field) | Existing adapter exact-schema preflight passed. Full-file in-memory parse only; no new persistence. |
+| Shenzhen Bao'an | 2 / 0 | See prior P5 QA; repeated source keys/snapshots were handled idempotently | 12 among 25 rows parsed by P3; 2 name placeholders terminally skipped | 5 among parsed records; two exact normalized-name groups | Existing adapter preflight passed. Historical P5 pilot recorded 22 candidates and 8 duplicate review cases; no new persistence. |
+| Tianjin municipal | 0 / 0 | Not available as source ID field | 36 | 4 | Existing Tianjin preview adapter exact-schema preflight passed; read-only in-memory preview only. |
+| Guangzhou TCM-issued subset | 0 / 0 | 0 | 7 | 7 | No configured approved source adapter; safe fields were mapped to existing pure P3 functions in memory. Personal-name fields excluded. |
+
+These counts are source-row counts or exact-name groups. They are not facility counts, national coverage counts, or publication candidates. Cross-source deduplication was not attempted.
