@@ -9,12 +9,14 @@ type PageProps = { params: Promise<{ id: string }> };
 export const dynamic = "force-dynamic";
 
 async function findPublishedFacility(id: string) {
+  let parsedId: string;
   try {
-    return await getPublicFacilityRepository().getById(parseUuid(id));
+    parsedId = parseUuid(id);
   } catch (error) {
     if (error instanceof ValidationError) return null;
     throw error;
   }
+  return getPublicFacilityRepository().getById(parsedId);
 }
 
 export async function generateMetadata({ params }: PageProps): Promise<Metadata> {

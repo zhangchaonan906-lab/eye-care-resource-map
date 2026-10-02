@@ -60,10 +60,31 @@ export function EyeHospitalsClient() {
   const [searchMoreError, setSearchMoreError] = useState(false);
   const [deepLinkNotice, setDeepLinkNotice] = useState<string | null>(null);
   const deepLinkTargetIdRef = useRef<string | null>(null);
+  const detailHeadingRef = useRef<HTMLHeadingElement>(null);
+  const previousSelectedIdRef = useRef<string | null>(null);
+  const detailReturnFocusRef = useRef<HTMLElement | null>(null);
   const loadMoreControllerRef = useRef<AbortController | null>(null);
   const mapControllerRef = useRef<FacilityMapController | null>(null);
 
   const labels = useMemo(() => new Map(categories.map((item) => [item.id, item.label])), [categories]);
+  useEffect(() => {
+    if (selectedId) {
+      if (!previousSelectedIdRef.current) {
+        const active = document.activeElement;
+        detailReturnFocusRef.current = active instanceof HTMLElement && active !== document.body ? active : null;
+      }
+      previousSelectedIdRef.current = selectedId;
+      if (!detailLoading && (detail || detailError)) detailHeadingRef.current?.focus();
+      return;
+    }
+    if (previousSelectedIdRef.current) {
+      previousSelectedIdRef.current = null;
+      if (detailReturnFocusRef.current?.isConnected) detailReturnFocusRef.current.focus();
+      else document.querySelector<HTMLInputElement>('input[aria-label="搜索医院"]')?.focus();
+      detailReturnFocusRef.current = null;
+    }
+  }, [selectedId, detail, detailLoading, detailError]);
+
   const mapFacilities = useMemo(() => {
     const unique = new Map<string, PublicFacility>();
     for (const facility of [...facilities, ...nearbyFacilities, ...(detail ? [detail] : [])]) unique.set(facility.id, facility);
@@ -452,11 +473,11 @@ export function EyeHospitalsClient() {
             {nearbyTruncated && <p role="status">附近机构较多，可缩小搜索半径</p>}
             <FacilityList facilities={nearbyFacilities} selectedId={selectedId} labels={labels} onSelect={selectFacility} title="附近结果" />
           </section>}
-          <p className="eye-map__coverage-note">仅展示当前视窗已发布且可公开查询的机构。</p>
+          <p className="eye-map__coverage-note">实际展示范围取决于已核验公开数据；仅展示当前视窗内已发布且可公开查询的机构。</p>
         </aside>
         <div className="eye-map__map-column">
           <MapCanvas facilities={mapFacilities} userLocation={userLocation} selectedId={selectedId} onController={receiveController} onViewport={changeViewport} onSelectFacility={selectedForMap} onClearSelection={clearSelection} onError={mapError} />
-          <FacilityDetailPanel facility={detail} loading={detailLoading} error={detailError} labels={labels} onClose={clearSelection} />
+          <FacilityDetailPanel facility={detail} loading={detailLoading} error={detailError} labels={labels} onClose={clearSelection} headingRef={detailHeadingRef} />
         </div>
       </div>
     </main>

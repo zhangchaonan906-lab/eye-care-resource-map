@@ -126,7 +126,7 @@ export default function AdminConsole({ username }: { username: string }) {
 
   return <main className="admin-shell">
     <aside className="admin-sidebar"><div><p className="admin-eyebrow">EYE CARE RESOURCE MAP</p><h1>审核控制台</h1><p className="admin-muted">管理员：{username}</p></div>
-      <nav aria-label="审核队列">{TABS.map((item) => <button key={item.key} className={tab === item.key ? "is-active" : ""} onClick={() => { setTab(item.key); setStatus(""); setCursor(null); }}>{item.label}</button>)}</nav>
+      <nav aria-label="审核队列">{TABS.map((item) => <button key={item.key} data-testid={`review-tab-${item.key}`} className={tab === item.key ? "is-active" : ""} onClick={() => { setTab(item.key); setStatus(""); setCursor(null); }}>{item.label}</button>)}</nav>
       <button className="admin-logout" onClick={() => void logout()}>退出登录</button>
     </aside>
     <section className="admin-workspace"><header className="admin-toolbar"><div><p className="admin-eyebrow">P11 · REVIEW & PUBLICATION</p><h2>{TABS.find((item) => item.key === tab)?.label}</h2></div>
@@ -136,7 +136,7 @@ export default function AdminConsole({ username }: { username: string }) {
     <div className="admin-review-grid"><section className="admin-queue" aria-label="审核列表">
       {error && <p className="admin-error" role="alert">{error}</p>}{busy && <p className="admin-muted">正在加载…</p>}
       {!busy && !error && rows.length === 0 && <p className="admin-empty">当前筛选没有待处理记录。</p>}
-      <ul>{rows.map((row) => <li key={row.id}><button className={selected?.id === row.id ? "is-selected" : ""} onClick={() => setSelected(row)}>
+      <ul>{rows.map((row) => <li key={row.id}><button data-testid={`review-row-${tab}-${row.id}`} className={selected?.id === row.id ? "is-selected" : ""} onClick={() => setSelected(row)}>
         <strong>{display(row.name ?? row.parsed_name ?? row.candidate_name ?? row.source_name ?? row.entity ?? row.id)}</strong>
         <span>{display(row.address ?? row.parsed_address ?? row.query_address ?? row.reason ?? row.action)}</span>
         <small>{display(row[STATUS_COLUMN[tab]])} · {row.id}</small>

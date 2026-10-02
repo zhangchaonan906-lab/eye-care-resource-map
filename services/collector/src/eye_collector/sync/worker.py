@@ -86,7 +86,9 @@ class SyncWorker:
                     max_attempts=self._collector_config.http_max_attempts,
                     backoff_base_seconds=self._collector_config.http_backoff_base_seconds,
                     user_agent=self._collector_config.http_user_agent,
-                    transport=FixtureTransport(),
+                    transport=FixtureTransport(
+                        revision=getattr(self._registry, "fixture_revision", "stable")
+                    ),
                 )
                 adapter = self._registry.create(task.adapter_key, http)
                 result = CollectorRunner(collector, adapter).run(

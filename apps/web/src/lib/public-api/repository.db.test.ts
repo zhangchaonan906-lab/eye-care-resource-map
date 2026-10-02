@@ -153,6 +153,9 @@ describe("PostGIS public facility repository", () => {
     expect(await repository.getById("00000000-0000-4000-8000-000000000299")).toBeNull();
     expect((await repository.search({ q: "测试眼科医院A", match: "exact", limit: 20 })).items).toHaveLength(1);
     expect((await repository.search({ q: "测试眼科", match: "prefix", limit: 20 })).items).toHaveLength(2);
+    expect((await repository.search({ q: "测试%", match: "prefix", limit: 20 })).items).toHaveLength(0);
+    expect((await repository.search({ q: "测试_", match: "prefix", limit: 20 })).items).toHaveLength(0);
+    expect((await repository.search({ q: "' OR 1=1 --", match: "prefix", limit: 20 })).items).toEqual([]);
   });
 
   it("continues keyset pages without duplicates and rejects private table reads", async () => {
@@ -192,6 +195,18 @@ describe("PostGIS public facility repository", () => {
     } finally {
       client.release();
     }
+  });
+
+  it("searches published rows only and keeps the normalized-name index available", async () => {
+    const privateRow = await runtimeRole.query(
+      "SELECT id FROM public.query_published_facilities_search($1,$2,NULL,NULL,NULL,NULL,21)",
+      ["测试未发布医院", "exact"],
+    );
+    expect(privateRow.rows).toEqual([]);
+    const index = await admin.query(
+      "SELECT to_regclass('app_private.facilities_normalized_name_idx') AS index_name",
+    );
+    expect(index.rows[0]?.index_name).toBe("app_private.facilities_normalized_name_idx");
   });
 
   it("filters nearby published facilities by radius and category, orders by exact distance, and reports truncation", async () => {

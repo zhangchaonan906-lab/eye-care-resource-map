@@ -142,6 +142,14 @@ describe("search and categories", () => {
     expect(vi.mocked(repo.search).mock.calls.map(([input]) => input.match)).toEqual(["exact", "prefix"]);
   });
 
+  it("rejects Unicode control characters before they reach PostgreSQL text parameters", async () => {
+    const repo = repository();
+    const response = await searchHandler(new Request("https://local.test/api/search?q=clinic%00name"), repo);
+    expect(response.status).toBe(400);
+    expect(await response.json()).toMatchObject({ error: { code: "INVALID_ARGUMENT" } });
+    expect(repo.search).not.toHaveBeenCalled();
+  });
+
   it("returns all five supported categories", async () => {
     const response = await categoriesHandler();
     expect(response.status).toBe(200);

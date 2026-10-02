@@ -71,17 +71,18 @@ export class PostgresPublicFacilityRepository implements PublicFacilityRepositor
   }
 
   async search(input: SearchInput): Promise<Page<PublicFacility>> {
-    const values: unknown[] = [input.q];
-    const clauses = [input.match === "exact" ? "normalized_name = $1" : "left(normalized_name, char_length($1)) = $1"];
-    if (input.category) { values.push(input.category); clauses.push(`category = $${values.length}`); }
-    if (input.region) { values.push(input.region); clauses.push(`region_adcode LIKE $${values.length} || '%'`); }
-    if (input.cursor) {
-      values.push(input.cursor.name, input.cursor.name, input.cursor.id);
-      clauses.push(`(normalized_name > $${values.length - 2} OR (normalized_name = $${values.length - 1} AND id > $${values.length}::uuid))`);
-    }
-    values.push(input.limit + 1);
+    const pattern = input.q.replace(/[\\%_]/g, "\\$&");
+    const values = [
+      input.match === "exact" ? input.q : `${pattern}%`,
+      input.match,
+      input.category ?? null,
+      input.region ?? null,
+      input.cursor?.name ?? null,
+      input.cursor?.id ?? null,
+      input.limit + 1,
+    ];
     const result = await this.pool.query<FacilityRow>(
-      `SELECT ${SELECTION} FROM public.published_facility_api WHERE ${clauses.join(" AND ")} ORDER BY normalized_name, id LIMIT $${values.length}`,
+      "SELECT * FROM public.query_published_facilities_search($1, $2, $3, $4, $5, $6::uuid, $7)",
       values,
     );
     return this.page(result.rows, input.limit, (row) => ({ kind: "search", name: row.normalized_name, id: row.id }));

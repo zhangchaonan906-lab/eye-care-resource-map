@@ -17,7 +17,8 @@ export async function initializeFacilityMap(
   config: BasemapConfig,
   callbacks: { onViewport: (viewport: Viewport) => void; onSelectFacility: (id: string) => void; onClearSelection: () => void },
 ): Promise<FacilityMapController> {
-  const { Map } = await import("maplibre-gl");
+  const { Map, setWorkerUrl } = await import("maplibre-gl");
+  setWorkerUrl("/vendor/maplibre-gl/maplibre-gl-worker.mjs");
   const map = new Map({
     container,
     style: config.styleObject,
@@ -101,6 +102,11 @@ export async function initializeFacilityMap(
     });
     map.on("moveend", emitViewport);
     map.on("zoomend", emitViewport);
+    map.on("idle", () => {
+      container.dataset.clusterFeatureCount = String(
+        map.queryRenderedFeatures(undefined, { layers: ["facility-clusters"] }).length,
+      );
+    });
     emitViewport();
   });
 

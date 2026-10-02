@@ -35,7 +35,11 @@ export function MapCanvas({ facilities, userLocation, selectedId, onController, 
     if (!container) return;
     let active = true;
     void initializeFacilityMap(container, basemapConfig, {
-      onViewport: (viewport) => callbackRef.current.onViewport(viewport),
+      onViewport: (viewport) => {
+        container.dataset.currentViewport = JSON.stringify(viewport);
+        container.dataset.viewportRevision = String(Number(container.dataset.viewportRevision ?? "0") + 1);
+        callbackRef.current.onViewport(viewport);
+      },
       onSelectFacility: (id) => callbackRef.current.onSelectFacility(id),
       onClearSelection: () => callbackRef.current.onClearSelection(),
     }).then((controller) => {
@@ -46,6 +50,10 @@ export function MapCanvas({ facilities, userLocation, selectedId, onController, 
       mapRef.current = controller;
       controller.setFacilities(latestMapDataRef.current.facilities, latestMapDataRef.current.selectedId);
       controller.setUserLocation(latestMapDataRef.current.userLocation);
+      const selectedFacility = latestMapDataRef.current.facilities.find(
+        (facility) => facility.id === latestMapDataRef.current.selectedId,
+      );
+      if (selectedFacility) controller.flyTo(selectedFacility.longitude, selectedFacility.latitude);
       if (latestMapDataRef.current.userLocation) {
         controller.flyTo(latestMapDataRef.current.userLocation.longitude, latestMapDataRef.current.userLocation.latitude);
       }

@@ -1,0 +1,29 @@
+import { defineConfig, devices } from "@playwright/test";
+import baseConfig from "./playwright.config";
+
+const systemPort = process.env.PLAYWRIGHT_PORT ?? "3100";
+const systemBaseUrl = `http://localhost:${systemPort}`;
+
+export default defineConfig({
+  ...baseConfig,
+  use: { ...baseConfig.use, baseURL: systemBaseUrl, trace: "off" },
+  testDir: "./e2e",
+  testMatch: ["system-golden-path.spec.ts", "hostile-input.spec.ts", "system-stress.spec.ts"],
+  fullyParallel: false,
+  forbidOnly: true,
+  retries: 0,
+  reporter: process.env.CI ? "github" : "list",
+  projects: [{ name: "chromium-system", use: { ...devices["Desktop Chrome"] } }],
+  workers: 1,
+  webServer: {
+    command: `npm run start -- --hostname localhost --port ${systemPort}`,
+    url: `${systemBaseUrl}/admin/login`,
+    reuseExistingServer: false,
+    timeout: 120_000,
+    env: {
+      ADMIN_SESSION_SECRET: process.env.ADMIN_SESSION_SECRET ?? "",
+      NEXT_TELEMETRY_DISABLED: "1",
+      P13_SYSTEM_TEST_MODE: process.env.P13_SYSTEM_TEST_MODE ?? "",
+    },
+  },
+});

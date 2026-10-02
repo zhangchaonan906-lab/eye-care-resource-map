@@ -1,5 +1,6 @@
 import { authenticatedSession, mutationIsAllowed } from "@/lib/admin/session-handlers";
 import { getAdminReviewRepository } from "@/lib/admin/repository";
+import { validateAdminDecisionInput } from "@/lib/admin/decision-validation";
 
 export const dynamic = "force-dynamic";
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -16,15 +17,12 @@ export async function POST(request: Request, context: { params: Promise<{ entity
   if (!mapped || !UUID.test(id)) return Response.json({ data: null, meta: null, error: { code: "INVALID_ARGUMENT", message: "决策对象无效" } }, { status: 400 });
   let body: unknown;
   try { body = await request.json(); } catch { return Response.json({ data: null, meta: null, error: { code: "INVALID_ARGUMENT", message: "请求格式无效" } }, { status: 400 }); }
-  const input = body as { action?: unknown; reason?: unknown; [key: string]: unknown };
-  if (typeof input.action !== "string" || typeof input.reason !== "string" || input.reason.trim().length < 5 || input.reason.trim().length > 500) {
-    return Response.json({ data: null, meta: null, error: { code: "REASON_REQUIRED", message: "请填写 5 至 500 个字符的审核理由" } }, { status: 400 });
-  }
+  const input = validateAdminDecisionInput(mapped, body);
+  if (!input) return Response.json({ data: null, meta: null, error: { code: "INVALID_ARGUMENT", message: "决策参数无效" } }, { status: 400 });
   try {
     const data = await getAdminReviewRepository().decide({
       requestId: idempotencyKey, actorId: session.actorId, entity: mapped, entityId: id,
-      action: input.action, reason: input.reason.trim(),
-      payload: Object.fromEntries(Object.entries(input).filter(([key]) => !["action", "reason", "actor_id", "actorId"].includes(key))),
+      action: input.action, reason: input.reason, payload: input.payload,
     });
     return Response.json({ data, meta: null, error: null }, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {

@@ -101,7 +101,9 @@ export function validateViewport(
 
 export function parseSearchQuery(url: URL) {
   const q = normalizeSearchTerm(url.searchParams.get("q") ?? "");
-  if (!q || q.length > 100) throw new ValidationError("q 必须为 1 到 100 个字符");
+  if (!q || q.length > 100 || /[\u0000-\u001f\u007f-\u009f]/.test(q)) {
+    throw new ValidationError("q 必须为 1 到 100 个不含控制字符的字符");
+  }
   const matchValue = url.searchParams.get("match") ?? "prefix";
   if (matchValue !== "exact" && matchValue !== "prefix") throw new ValidationError("match 只支持 exact 或 prefix");
   const limit = parseLimit(url.searchParams.get("limit"), 20, 20);
