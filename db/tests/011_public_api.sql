@@ -5,9 +5,9 @@ SET LOCAL search_path = app_private, public, extensions;
 INSERT INTO app_private.regions (id, adcode, name, level, version)
 VALUES ('00000000-0000-4000-8000-000000000111', '110000', '北京市', 'province', 'p7-test');
 INSERT INTO app_private.source_catalog
-  (id, name, url, dataset_page, use_basis, status, app_display_allowed, source_updated_at)
+  (id, name, url, dataset_page, use_basis, status, data_use_allowed, reuse_allowed, app_display_allowed, permitted_fields, retention_restrictions, source_updated_at)
 VALUES ('00000000-0000-4000-8000-000000000112', 'P7 合成来源', 'https://example.org/source',
-  'https://example.org/dataset', '仅用于本地合成 API 测试', 'approved', true, DATE '2026-09-01');
+  'https://example.org/dataset', '仅用于本地合成 API 测试', 'approved', true, true, true, ARRAY['name','address','specialties','coordinates'], 'unrestricted', DATE '2026-09-01');
 INSERT INTO app_private.import_runs (id, source_id, region_code, status, ended_at)
 VALUES ('00000000-0000-4000-8000-000000000113', '00000000-0000-4000-8000-000000000112', '110000', 'succeeded', now());
 INSERT INTO app_private.source_records
@@ -30,7 +30,8 @@ INSERT INTO app_private.facility_evidence
 VALUES
   ('00000000-0000-4000-8000-000000000115', '00000000-0000-4000-8000-000000000114', 'ophthalmology_status', '"verified"'::jsonb, 1),
   ('00000000-0000-4000-8000-000000000115', '00000000-0000-4000-8000-000000000114', 'name', '"合成眼科医院"'::jsonb, 1),
-  ('00000000-0000-4000-8000-000000000115', '00000000-0000-4000-8000-000000000114', 'address', '"合成路1号"'::jsonb, 1);
+  ('00000000-0000-4000-8000-000000000115', '00000000-0000-4000-8000-000000000114', 'address', '"合成路1号"'::jsonb, 1),
+  ('00000000-0000-4000-8000-000000000115', '00000000-0000-4000-8000-000000000114', 'specialties', '"眼科"'::jsonb, 1);
 
 DO $$
 DECLARE

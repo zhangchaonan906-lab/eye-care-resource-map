@@ -13,11 +13,13 @@ collector_password="$(python3 -c 'import secrets; print(secrets.token_hex(32))')
 etl_password="$(python3 -c 'import secrets; print(secrets.token_hex(32))')"
 geocode_password="$(python3 -c 'import secrets; print(secrets.token_hex(32))')"
 public_api_password="$(python3 -c 'import secrets; print(secrets.token_hex(32))')"
+admin_review_password="$(python3 -c 'import secrets; print(secrets.token_hex(32))')"
 export DATABASE_URL="postgresql://eye_collector_runtime:${collector_password}@127.0.0.1:${EYE_MAP_DB_PORT}/eye"
 export ETL_DATABASE_URL="postgresql://eye_etl_runtime:${etl_password}@127.0.0.1:${EYE_MAP_DB_PORT}/eye"
 export DATABASE_ADMIN_URL="postgresql://eye:${EYE_MAP_POSTGRES_PASSWORD}@127.0.0.1:${EYE_MAP_DB_PORT}/eye"
 export GEOCODE_DATABASE_URL="postgresql://eye_geocode_runtime:${geocode_password}@127.0.0.1:${EYE_MAP_DB_PORT}/eye"
 export PUBLIC_API_DATABASE_URL="postgresql://eye_public_api_runtime:${public_api_password}@127.0.0.1:${EYE_MAP_DB_PORT}/eye"
+export ADMIN_DATABASE_URL="postgresql://eye_admin_review_runtime:${admin_review_password}@127.0.0.1:${EYE_MAP_DB_PORT}/eye"
 
 compose() {
   docker compose -p "$project_name" "$@"
@@ -61,6 +63,9 @@ compose exec -T db psql -h 127.0.0.1 -U eye -d eye -v ON_ERROR_STOP=1 \
   -f /workspace/db/migrations/011_public_api.sql
 compose exec -T db psql -h 127.0.0.1 -U eye -d eye -v ON_ERROR_STOP=1 \
   -f /workspace/db/migrations/012_nearby_api.sql
+compose exec -T db psql -h 127.0.0.1 -U eye -d eye -v ON_ERROR_STOP=1 \
+  -f /workspace/db/migrations/013_admin_review.sql
+compose exec -T db psql -h 127.0.0.1 -U eye -d eye -v ON_ERROR_STOP=1 -v admin_password="$admin_review_password" -f /workspace/scripts/provision-admin-review-login.sql
 
 for sql_file in \
   /workspace/db/tests/001_core.sql \
@@ -77,6 +82,8 @@ compose exec -T db psql -h 127.0.0.1 -U eye -d eye -v ON_ERROR_STOP=1 \
   -f /workspace/db/tests/011_public_api.sql
 compose exec -T db psql -h 127.0.0.1 -U eye -d eye -v ON_ERROR_STOP=1 \
   -f /workspace/db/tests/012_nearby_api.sql
+compose exec -T db psql -h 127.0.0.1 -U eye -d eye -v ON_ERROR_STOP=1 \
+  -f /workspace/db/tests/013_admin_review.sql
 compose exec -T db psql -h 127.0.0.1 -U eye -d eye -v ON_ERROR_STOP=1 \
   -v collector_password="$collector_password" -f /workspace/scripts/provision-collector-login.sql
 compose exec -T db psql -h 127.0.0.1 -U eye -d eye -v ON_ERROR_STOP=1 \
