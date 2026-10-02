@@ -8,6 +8,8 @@ $previousEtlDatabaseUrl = [Environment]::GetEnvironmentVariable('ETL_DATABASE_UR
 $previousDatabaseAdminUrl = [Environment]::GetEnvironmentVariable('DATABASE_ADMIN_URL', 'Process')
 $previousGeocodeDatabaseUrl = [Environment]::GetEnvironmentVariable('GEOCODE_DATABASE_URL', 'Process')
 $previousSyncDatabaseUrl = [Environment]::GetEnvironmentVariable('SYNC_DATABASE_URL', 'Process')
+$previousPublicApiDatabaseUrl = [Environment]::GetEnvironmentVariable('PUBLIC_API_DATABASE_URL', 'Process')
+$previousAdminDatabaseUrl = [Environment]::GetEnvironmentVariable('ADMIN_DATABASE_URL', 'Process')
 $portProbe = [Net.Sockets.TcpListener]::new([Net.IPAddress]::Loopback, 0)
 $portProbe.Start()
 $testPort = $portProbe.LocalEndpoint.Port
@@ -46,13 +48,16 @@ try {
   if ($LASTEXITCODE -ne 0) { throw 'P5 real export compatibility migration failed.' }
   docker compose -p $projectName exec -T db psql -U eye -d eye -v ON_ERROR_STOP=1 -f /workspace/db/migrations/010_etl_import_run_scope.sql
   if ($LASTEXITCODE -ne 0) { throw 'P5 ETL import-run scope migration failed.' }
-  foreach ($migration in @('011_public_api.sql','012_nearby_api.sql','013_admin_review.sql','014_incremental_sync.sql')) {
+  foreach ($migration in @('011_public_api.sql','012_nearby_api.sql','013_admin_review.sql','014_incremental_sync.sql','015_public_query_performance.sql')) {
     $sqlFile = "/workspace/db/migrations/$migration"
     docker compose -p $projectName exec -T db psql -U eye -d eye -v ON_ERROR_STOP=1 -f $sqlFile
     if ($LASTEXITCODE -ne 0) { throw "SQL failed: $sqlFile" }
   }
+  $publicApiPassword = [Convert]::ToHexString([Security.Cryptography.RandomNumberGenerator]::GetBytes(32))
   $adminPassword = [Convert]::ToHexString([Security.Cryptography.RandomNumberGenerator]::GetBytes(32))
   $syncPassword = [Convert]::ToHexString([Security.Cryptography.RandomNumberGenerator]::GetBytes(32))
+  docker compose -p $projectName exec -T db psql -U eye -d eye -v "api_password=$publicApiPassword" -f /workspace/scripts/provision-public-api-login.sql
+  if ($LASTEXITCODE -ne 0) { throw 'Could not provision the temporary public API login.' }
   docker compose -p $projectName exec -T db psql -U eye -d eye -v "admin_password=$adminPassword" -f /workspace/scripts/provision-admin-review-login.sql
   if ($LASTEXITCODE -ne 0) { throw 'Could not provision the temporary admin review login.' }
   docker compose -p $projectName exec -T db psql -U eye -d eye -v "sync_password=$syncPassword" -f /workspace/scripts/provision-sync-worker-login.sql
@@ -83,15 +88,27 @@ try {
   if ($LASTEXITCODE -ne 0) { throw 'Could not seed the synthetic source catalog.' }
   docker compose -p $projectName exec -T db psql -U eye -d eye -v ON_ERROR_STOP=1 -f /workspace/db/tests/014_incremental_sync.sql
   if ($LASTEXITCODE -ne 0) { throw 'P12 incremental sync database tests failed.' }
+  docker compose -p $projectName exec -T db psql -U eye -d eye -v ON_ERROR_STOP=1 -f /workspace/db/tests/p13_synthetic_performance.sql
+  if ($LASTEXITCODE -ne 0) { throw 'P13 synthetic performance database checks failed.' }
   $env:DATABASE_URL = "postgresql://eye_collector_runtime:$collectorPassword@127.0.0.1:$testPort/eye"
   docker compose -p $projectName exec -T db psql -U eye -d eye -v "etl_password=$etlPassword" -f /workspace/scripts/provision-etl-login.sql
   if ($LASTEXITCODE -ne 0) { throw 'Could not provision the temporary ETL login.' }
   $env:ETL_DATABASE_URL = "postgresql://eye_etl_runtime:$etlPassword@127.0.0.1:$testPort/eye"
   $env:SYNC_DATABASE_URL = "postgresql://eye_sync_worker_runtime:$syncPassword@127.0.0.1:$testPort/eye"
+  $env:PUBLIC_API_DATABASE_URL = "postgresql://eye_public_api_runtime:$publicApiPassword@127.0.0.1:$testPort/eye"
+  $env:ADMIN_DATABASE_URL = "postgresql://eye_admin_review_runtime:$adminPassword@127.0.0.1:$testPort/eye"
   docker compose -p $projectName exec -T db psql -U eye -d eye -v "geocode_password=$geocodePassword" -f /workspace/scripts/provision-geocode-login.sql
   if ($LASTEXITCODE -ne 0) { throw 'Could not provision the temporary geocode login.' }
   $env:GEOCODE_DATABASE_URL = "postgresql://eye_geocode_runtime:$geocodePassword@127.0.0.1:$testPort/eye"
   $env:DATABASE_ADMIN_URL = "postgresql://eye:$env:EYE_MAP_POSTGRES_PASSWORD@127.0.0.1:$testPort/eye"
+  Push-Location (Join-Path $repoRoot 'apps/web')
+  try {
+    npm run test:db
+    if ($LASTEXITCODE -ne 0) { throw 'Public API and admin database integration tests failed.' }
+  }
+  finally {
+    Pop-Location
+  }
   Push-Location (Join-Path $repoRoot 'services/collector')
   try {
     $cliResult = py -m eye_collector.cli run --source fixture --region 110000 --dry-run --limit 1 | ConvertFrom-Json
@@ -176,6 +193,16 @@ finally {
     } else {
       $env:SYNC_DATABASE_URL = $previousSyncDatabaseUrl
     }
+    if ($null -eq $previousPublicApiDatabaseUrl) {
+      Remove-Item Env:\PUBLIC_API_DATABASE_URL -ErrorAction SilentlyContinue
+    } else {
+      $env:PUBLIC_API_DATABASE_URL = $previousPublicApiDatabaseUrl
+    }
+    if ($null -eq $previousAdminDatabaseUrl) {
+      Remove-Item Env:\ADMIN_DATABASE_URL -ErrorAction SilentlyContinue
+    } else {
+      $env:ADMIN_DATABASE_URL = $previousAdminDatabaseUrl
+    }
   }
 }
-Write-Host 'P1/P2/P3/P4/P5 database checks passed.'
+Write-Host 'P1-P5, P12, P13 disposable database checks passed.'

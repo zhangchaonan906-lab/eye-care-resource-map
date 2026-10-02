@@ -94,7 +94,8 @@ $$;
 
 DO $$
 DECLARE source_a uuid; source_b uuid; policy_a uuid; policy_b uuid; task_a uuid; task_b uuid;
-  task_row app_private.source_sync_tasks%ROWTYPE; run_b uuid; base_now timestamptz:=now(); result_status text;
+  task_row app_private.source_sync_tasks%ROWTYPE; run_b uuid; region_b text;
+  base_now timestamptz:=now(); result_status text;
 BEGIN
   INSERT INTO app_private.source_catalog(name,url,use_basis,permitted_fields,access_policy,status,reviewed_at)
   VALUES('P12 failure isolation A','https://fixture.invalid/failure-a','Synthetic test only',ARRAY['name'],
@@ -113,9 +114,10 @@ BEGIN
   SELECT id INTO task_b FROM app_private.source_sync_tasks WHERE source_sync_policy_id=policy_b;
   SELECT * INTO task_row FROM app_private.claim_source_sync_task('p12-worker-a',30,base_now);
   IF task_row.id IS NULL THEN RAISE EXCEPTION 'source A was not claimed'; END IF;
-  IF task_row.id=task_b THEN task_a:=task_row.id; task_b:=(SELECT id FROM app_private.source_sync_tasks WHERE source_sync_policy_id=policy_a);
-  ELSE task_a:=task_row.id; END IF;
-  SELECT source_id INTO source_b FROM app_private.source_sync_tasks WHERE id=task_b;
+  task_a:=task_row.id;
+  SELECT id INTO task_b FROM app_private.source_sync_tasks
+  WHERE source_sync_policy_id IN (policy_a,policy_b) AND id<>task_a;
+  SELECT source_id,region_code INTO source_b,region_b FROM app_private.source_sync_tasks WHERE id=task_b;
   result_status:=app_private.retry_source_sync_task(task_a,'p12-worker-a','NETWORK_TIMEOUT',
     'Synthetic timeout',true,base_now);
   IF result_status<>'retry_wait' OR
@@ -126,7 +128,7 @@ BEGIN
     WHERE id=task_b;
   IF task_row.id IS NULL THEN RAISE EXCEPTION 'source B was blocked by source A retry'; END IF;
   INSERT INTO app_private.import_runs(source_id,region_code,status,ended_at)
-  VALUES(source_b,'440000','succeeded',base_now) RETURNING id INTO run_b;
+  VALUES(source_b,region_b,'succeeded',base_now) RETURNING id INTO run_b;
   IF NOT app_private.record_source_sync_collection(task_b,'p12-worker-b',run_b,'{"new":0}'::jsonb,base_now+interval '1 second') THEN
     RAISE EXCEPTION 'source B collection stage did not persist';
   END IF;
