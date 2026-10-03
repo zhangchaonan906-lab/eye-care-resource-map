@@ -153,9 +153,9 @@
     "PRODUCTION_SOURCE_COVERAGE": {
       "status": "PENDING",
       "owner": "data-governance-owner",
-      "evidence": "P6 discovery documents leads, not national data coverage. The local P11 application database has 0 source snapshots, 0 candidates, and 0 published facilities. Coverage must not be described as complete nationally.",
+      "evidence": "National Harvest Round 1 (2026-10-03) reviewed the existing P6 matrix for all 31 mainland planning units and re-inspected four bounded official files totaling 4,946 raw rows. It created 0 new P11 source snapshots/candidates/facilities; 19 tracked leads are not proof of nationwide coverage. See docs/data-sources/nationwide/harvest-state.json, harvest-progress.md, harvest-manifest.md and docs/operations/national-harvest-round1-report.md. Coverage remains partial and region/source-scoped.",
       "requiredAction": "Publish region/source discovery, approval, file-inspection, imported-row, candidate, published-facility, and last-update counts with wording scoped to verified coverage.",
-      "verifiedAt": "2026-10-02T21:14:45Z"
+      "verifiedAt": "2026-10-02T22:12:04Z"
     },
     "DATA_CORRECTION_ENTRY": {
       "status": "PENDING",
