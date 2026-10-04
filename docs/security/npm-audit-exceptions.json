@@ -1,0 +1,16 @@
+{
+  "formatVersion": 1,
+  "exceptions": [
+    {
+      "id": "GHSA-vfj7-8cjw-p6xm",
+      "package": "braces",
+      "affected": "<=3.0.3",
+      "scope": "dev-only",
+      "reason": "Transitive dependency of eslint-config-next 16.3.8; no patched braces release exists as of 2026-10-04. Not present in the production dependency tree.",
+      "owner": "zhangchaonan906-lab",
+      "approvedAt": "2026-10-04T16:42:45Z",
+      "expiresAt": "2026-11-03T16:42:45Z",
+      "remediation": "Remove the exception immediately when an upstream patched release compatible with Next 16 becomes available."
+    }
+  ]
+}

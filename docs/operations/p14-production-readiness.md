@@ -25,7 +25,7 @@ The final P5 report records an isolated local pilot of 50 Beijing source rows an
 | `WORKER_HOSTING` | PENDING | Container exists, runtime does not. Select a scheduler/worker host and verify one-shot/loop operation, restart policy, secrets, network, logs, and resource limits. Keep all real-source schedules disabled. |
 | `BACKUP_RESTORE` | PENDING | P14-A's local synthetic drill passed; actual staging backup and restore to a separate target has not been performed. Verify schema, PostGIS, audit, source records, and public data. |
 
-`APP_HEALTH_CONTRACT`, build, system QA, and CI security scans are PASS as code/CI evidence only. They do not prove staging deployment. The P14-A disposable backup drill is separately recorded as `LOCAL_BACKUP_RESTORE_DRILL=PASS`.
+`APP_HEALTH_CONTRACT`, build, system QA, and CI security scans are PASS as code/CI evidence only. The security scan result means runtime high/critical findings are zero and production runtime exposure to `braces` was not detected; the full development tree has the temporary, expiring `GHSA-vfj7-8cjw-p6xm` exception recorded in [`npm-audit-exceptions.json`](../security/npm-audit-exceptions.json). It does not mean all dependencies are clean or prove staging deployment. The exception must be reviewed before its recorded expiry of `2026-11-03T16:42:45Z` and removed when a compatible upstream patch is available. The P14-A disposable backup drill is separately recorded as `LOCAL_BACKUP_RESTORE_DRILL=PASS`.
 
 ## 2. Basemap
 
