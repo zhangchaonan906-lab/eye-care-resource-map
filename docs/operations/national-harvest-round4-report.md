@@ -1,8 +1,7 @@
 # National Harvest Round 4 Report
 
-**Search date:** 2026-10-05  
-**Branch:** `national-harvest-round4`  
-**Round 3 PR:** #28  
+**Search date:** 2026-10-05 · **Branch:** `national-harvest-round4` · **Round 3 PR:** #28
+
 **Round 3 merge commit / current main baseline:** `daef5652aec673fffa28fb0001a6b06a76435518`
 
 Round 4 prioritized current official sources that expose explicit ophthalmology evidence. Acquired files remain in the operator's local quarantine store; this report does not grant reuse rights or approve production import. Every newly acquired source remains `source_status=UNKNOWN`.
