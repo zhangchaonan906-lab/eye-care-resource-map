@@ -20,9 +20,9 @@
     "SECURITY_SCANS": {
       "status": "PASS",
       "owner": "security-owner",
-      "evidence": "P14-A dependency and repository security scans passed in PR #25 CI before merge db50b4aa72d5577dc134e8127460e757c3b54de2; this is CI evidence, not a deployed penetration test.",
-      "requiredAction": "Re-run scans on the final release commit and review new findings.",
-      "verifiedAt": "2026-10-02T21:14:45Z"
+      "evidence": "Runtime npm high/critical findings: 0. Full npm audit has one reviewed dev-only exception: GHSA-vfj7-8cjw-p6xm for braces@3.0.3, absent from the production dependency tree; exception expires 2026-11-03T16:42:45Z. Repository security scans are CI evidence, not a deployed penetration test.",
+      "requiredAction": "Re-run the strict production runtime audit and controlled full dependency audit on the release commit. Review and remove the temporary dev-only exception before expiry or immediately when a compatible upstream patch is available.",
+      "verifiedAt": "2026-10-04T16:42:45Z"
     },
     "APP_HEALTH_CONTRACT": {
       "status": "PASS",
