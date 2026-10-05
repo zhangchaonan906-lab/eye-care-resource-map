@@ -16,7 +16,7 @@ export default defineConfig({
   projects: [{ name: "chromium-system", use: { ...devices["Desktop Chrome"] } }],
   workers: 1,
   webServer: {
-    command: `npm run start -- --hostname localhost --port ${systemPort}`,
+    command: `node ../../scripts/assert-p13-system-web-env.mjs && npm run start -- --hostname localhost --port ${systemPort}`,
     url: `${systemBaseUrl}/admin/login`,
     reuseExistingServer: false,
     timeout: 120_000,
