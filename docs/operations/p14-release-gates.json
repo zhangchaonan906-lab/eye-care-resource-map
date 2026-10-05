@@ -1,7 +1,7 @@
 {
   "formatVersion": 1,
   "environment": "production-release",
-  "asOf": "2026-10-02T21:14:45Z",
+  "asOf": "2026-10-05T13:49:06Z",
   "gates": {
     "SYSTEM_QA": {
       "status": "PASS",
@@ -48,8 +48,8 @@
     "STAGING_DATABASE": {
       "status": "PENDING",
       "owner": "database-owner",
-      "evidence": "No isolated staging PostgreSQL/PostGIS URL or credentials are configured. The running local P11 database is not staging evidence.",
-      "requiredAction": "Provision a separate staging database, apply migrations 001–015, and verify least-privilege roles and isolation.",
+      "evidence": "No isolated remote PostgreSQL/PostGIS URL or credentials are configured. Migration inventory now ends at 016 and migration-runner tests cover it; live isolation remains unobserved.",
+      "requiredAction": "Provision a separate staging database, apply migrations 001–016, and verify roles, correction-role isolation, and fixture-only data.",
       "verifiedAt": "2026-10-02T21:14:45Z"
     },
     "STAGING_DEPLOYMENT": {
@@ -104,9 +104,9 @@
     "PRODUCTION_RATE_LIMITING": {
       "status": "PENDING",
       "owner": "platform-owner",
-      "evidence": "No distributed or edge limiter provider/configuration has been selected or verified; a single-process limiter is not production evidence.",
-      "requiredAction": "Select and test distributed limits for map, search, detail, nearby, and admin login, with separate policies for public reads and authentication.",
-      "verifiedAt": "2026-10-02T21:14:45Z"
+      "evidence": "Shared Redis REST fixed-window limiter is implemented for facilities, details, search, nearby, correction submit, and admin login. Missing backend, trusted proxy identity, or HMAC secret fails closed. No real Redis credentials, multi-instance deployment, or live latency/cost test is configured.",
+      "requiredAction": "Provision the selected shared Redis REST backend and secrets; verify trusted proxy identity, limits across multiple instances, outage behavior, request logs, and budgets on staging.",
+      "verifiedAt": "2026-10-05T13:49:06Z"
     },
     "MONITORING": {
       "status": "PENDING",
@@ -153,16 +153,37 @@
     "PRODUCTION_SOURCE_COVERAGE": {
       "status": "PENDING",
       "owner": "data-governance-owner",
-      "evidence": "National Harvest Round 1 (2026-10-03) reviewed the existing P6 matrix for all 31 mainland planning units and re-inspected four bounded official files totaling 4,946 raw rows. It created 0 new P11 source snapshots/candidates/facilities; 19 tracked leads are not proof of nationwide coverage. See docs/data-sources/nationwide/harvest-state.json, harvest-progress.md, harvest-manifest.md and docs/operations/national-harvest-round1-report.md. Coverage remains partial and region/source-scoped.",
+      "evidence": "National Harvest Round 1 (2026-10-03) reviewed the existing P6 matrix for all 31 mainland planning units and re-inspected four bounded official files totaling 4,946 raw rows. It created 0 new P11 source snapshots/candidates/facilities; 18 historical leads are not proof of nationwide coverage. See docs/data-sources/nationwide/harvest-state.json, harvest-progress.md, harvest-manifest.md and docs/operations/national-harvest-round1-report.md. Coverage remains partial and region/source-scoped.",
       "requiredAction": "Publish region/source discovery, approval, file-inspection, imported-row, candidate, published-facility, and last-update counts with wording scoped to verified coverage.",
-      "verifiedAt": "2026-10-02T22:12:04Z"
+      "verifiedAt": "2026-10-05T13:49:06Z"
     },
     "DATA_CORRECTION_ENTRY": {
       "status": "PENDING",
       "owner": "product-operations-owner",
-      "evidence": "No public correction mailbox or approved form has been selected and tested; no automatic data mutation path is authorized.",
-      "requiredAction": "Choose and publish a contact/form with privacy notice, assign a manual reviewer/triage process, and route every correction through review without automatically changing canonical data.",
-      "verifiedAt": "2026-10-02T21:14:45Z"
+      "evidence": "Bounded public same-origin correction form, dedicated submit-only DB role, pending migration-backed review queue, authenticated read-only admin queue, and no direct facility mutation path are implemented. A staffed triage owner, retention/response notice, and deployed spam/privacy check are not yet in place.",
+      "requiredAction": "Assign a reviewer and retention/response process; verify the public route, rate limit, deployed logging, abuse handling, and admin access on staging before enabling.",
+      "verifiedAt": "2026-10-05T13:49:06Z"
+    },
+    "CORRECTION_QUEUE_CODE": {
+      "status": "PENDING",
+      "owner": "web-and-database-owner",
+      "evidence": "Migration 016, public/admin routes, UI, least-privilege role, idempotent review transitions, and unit/database tests are implemented. Disposable PostGIS execution is pending CI because Docker is unavailable in the local environment.",
+      "requiredAction": "Require P1–P14 database regression and P13 system E2E CI to pass before setting this code gate to PASS.",
+      "verifiedAt": "2026-10-05T13:49:06Z"
+    },
+    "EMPTY_DATA_COVERAGE_UX": {
+      "status": "PASS",
+      "owner": "product-owner",
+      "evidence": "Explicit ongoing coverage notice, non-completeness wording, existing distinct empty/error/location-denied states; Web unit suite 87/87, P13 E2E 7/7, and accessibility 3/3 passed locally on this branch.",
+      "requiredAction": "Repeat after release-affecting UI changes and inspect the deployed staging view.",
+      "verifiedAt": "2026-10-05T13:49:06Z"
+    },
+    "DISTRIBUTED_LIMITER_CODE": {
+      "status": "PASS",
+      "owner": "platform-owner",
+      "evidence": "Redis REST fixed-window implementation protects facilities, details, search, nearby, corrections and admin session endpoints; HMAC client key, trusted-proxy requirement, HTTPS validation, and fail-closed behavior covered by unit tests. Web unit/typecheck/lint/build and P13 browser QA pass. No real provider credentials or deployed distributed evidence.",
+      "requiredAction": "Keep PRODUCTION_RATE_LIMITING pending until staging verifies provider credentials, multiple instances, abuse behavior, logs, cost and latency.",
+      "verifiedAt": "2026-10-05T13:49:06Z"
     }
   }
 }

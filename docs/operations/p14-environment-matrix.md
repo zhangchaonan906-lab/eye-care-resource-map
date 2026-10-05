@@ -5,6 +5,10 @@
 | Database projects | Disposable local PostGIS | Per-job disposable PostGIS | Dedicated isolated DB required | Separate production DB; not available in P14-A |
 | `PUBLIC_API_DATABASE_URL` | Local least-privilege role | Ephemeral test role | Public API runtime role | Public API runtime role |
 | `ADMIN_DATABASE_URL` | Local admin-review role | Ephemeral test role | Admin-review runtime role | Admin-review runtime role |
+| `CORRECTION_DATABASE_URL` | Local correction submitter role | Ephemeral correction role | Dedicated correction submitter role | Dedicated correction submitter role |
+| `UPSTASH_REDIS_REST_URL` / `UPSTASH_REDIS_REST_TOKEN` | Optional; in-memory development limiter | Mocked unit tests | Required shared distributed limiter | Required shared distributed limiter |
+| `TRUST_PROXY_HEADERS` | `false` | Test controlled | `true` only behind a proxy that overwrites forwarded client address | `true` only behind a proxy that overwrites forwarded client address |
+| `RATE_LIMIT_HASH_SECRET` | Local-only fallback | Ephemeral test value | Secret-manager value, random high-entropy | Secret-manager value, random high-entropy |
 | `DATABASE_URL` | Collector runtime role | Ephemeral test role | Collector runtime role | Collector runtime role |
 | `ETL_DATABASE_URL` | ETL runtime role | Ephemeral test role | ETL runtime role | ETL runtime role |
 | `GEOCODE_DATABASE_URL` | Fixture only | Fixture only | Fixture only | Not configured; production provider gate pending |
