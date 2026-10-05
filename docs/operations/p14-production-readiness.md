@@ -2,15 +2,15 @@
 
 **Status: PARTIAL — production launch NO-GO**
 
-**Evidence snapshot:** 2026-10-05 UTC
+**Evidence snapshot:** 2026-10-05 UTC (Phase 4 access check at 14:55 UTC)
 
-**P14-A merge:** PR #25 squash-merged to `main` at `db50b4aa72d5577dc134e8127460e757c3b54de2`.
+**P14-A merge:** PR #25 squash-merged to `main` at `db50b4aa72d5577dc134e8127460e757c3b54de2`. **Phase 4 prerequisite merge:** PR #34 squash-merged to `main` at `4db7db236fee1ad7c363e84dd1920af0c7e78020`.
 
 This document records the current release evidence and the actions still requiring real infrastructure, provider terms, and authorized data. A local test, source discovery lead, or historical pilot is not treated as cloud or production proof. The authoritative gate manifest is [`p14-release-gates.json`](p14-release-gates.json); every gate records its owner, evidence, required action, and last verification time.
 
 ## Current environment boundary
 
-On 2026-10-02 the environment had no staging URL, staging database credentials, hosting credentials, or production map/geocoder provider configuration. The local `eye-p11-db-1` container was healthy, but it is a local application database, not staging or production. A read-only query found 0 rows in `public.published_facility_api`, 0 current source snapshots, and 0 current candidates. These counts do not include a separate historical P5 pilot database.
+On 2026-10-05 the environment check found no staging URL, staging database/Redis configuration, hosting or SSH credentials, GitHub `staging` environment, repository Actions secrets, or monitoring DSN. Docker CLI is installed but no Docker Engine is available. No real infrastructure deployment was attempted. The earlier local `eye-p11-db-1` container, when available, is a local application database, not staging or production. Existing local/CI evidence is not a substitute for remote evidence. See [the Phase 4 live verification record](staging-live-verification.md).
 
 The final P5 report records an isolated local pilot of 50 Beijing source rows and 27 Bao'an source rows, producing 72 candidates and 8 duplicate-review cases. It records 0 published facilities, 0 verified coordinates, and no geocoder calls. These historical pilot outputs are not current P11 application rows, are not a public sample, and do not satisfy P14 real-data publication or quality gates. See [`p5-real-pilot-final-report.md`](p5-real-pilot-final-report.md).
 

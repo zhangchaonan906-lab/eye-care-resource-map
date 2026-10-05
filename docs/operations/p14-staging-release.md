@@ -1,8 +1,8 @@
-# P14-A Staging and Release Engineering
+# P14 Staging and Release Engineering
 
 ## Current status
 
-P13 PR #24 is merged to `main` at `111452519e033df94726809308a9a2349feb48cd`. P14-A builds staging and release controls; it does not authorize production launch. No Vercel, staging host, `STAGING_SITE_URL`, or isolated staging database credentials were present in the environment. Therefore cloud deployment and remote smoke are **blocked by missing credentials**, and no deployment is claimed.
+P14-A controls are on `main`; PR #34 was squash-merged on 2026-10-05 at `4db7db236fee1ad7c363e84dd1920af0c7e78020`. The Phase 4 environment check on 2026-10-05 found no `STAGING_SITE_URL`, remote staging database or Redis configuration, hosting credentials, SSH credentials, GitHub `staging` environment, or repository Actions secrets. Docker CLI is present but no local Engine is running. Cloud provisioning and live checks are **blocked by absent infrastructure access**; no deployment is claimed. See [the live verification record](staging-live-verification.md).
 
 ## Operator sequence
 
@@ -11,7 +11,7 @@ P13 PR #24 is merged to `main` at `111452519e033df94726809308a9a2349feb48cd`. P1
 3. Review `docs/operations/p14-release-gates.json`, run the production and staging guards, and confirm the production guard still blocks launch.
 4. Provision PostGIS in the database's `public` schema, then run `DATABASE_ADMIN_URL=... scripts/apply-migrations.sh` as a one-shot operator action. The runner verifies the 001–016 inventory/checksums and records each applied version. It bootstraps the reviewed P5 source catalog baseline after migration 008, then refuses untracked existing application schemas or drift.
 5. Deploy the Web image and separate collector container/scheduled runner. Start with fixture-only configuration; keep every real-source schedule disabled.
-6. Set the exact HTTPS `SITE_URL`, deploy, then run `STAGING_SITE_URL=... node scripts/staging-smoke.mjs`. Validate `/api/version`, readiness, security headers, noindex, admin cache behavior, and nearby POST validation.
+6. Set the exact HTTPS `SITE_URL`, deploy, then run `STAGING_SITE_URL=... node scripts/staging-smoke.mjs`. The current smoke covers liveness/readiness, synthetic empty search, map noindex, admin login-page cache headers, detail not-found, nearby POST/GET contract, basic security headers, robots, and version. It does **not** yet prove authenticated admin login, correction submission/review, log privacy, multi-instance rate limiting, worker task lifecycle, or alert delivery; those require separate live checks before their gates can pass.
 7. Run and record a disposable backup/restore drill. No backup from this project may be copied to Git or CI artifacts.
 
 The migration runner is a one-shot release command, never part of a Next.js request. Do not edit an already-applied migration; add a new migration and update its checksum inventory through review. SHA-256 checksums use canonical LF text so Git's Windows CRLF checkout does not create platform-specific drift. The current runner fails closed when an existing schema has no history registry.
@@ -26,5 +26,7 @@ The migration runner is a one-shot release command, never part of a Next.js requ
 - Public API and admin-login routes require the shared Redis REST limiter when `APP_ENV=staging` or `production`; configure `UPSTASH_REDIS_REST_URL`, `UPSTASH_REDIS_REST_TOKEN`, `RATE_LIMIT_HASH_SECRET`, and `TRUST_PROXY_HEADERS=true` only behind a proxy that overwrites client-address headers. Missing limiter or identity configuration fails closed. Live multi-instance and provider log evidence is still required before the gate can pass.
 - Configure `CORRECTION_DATABASE_URL` with the dedicated `eye_correction_runtime` role. Migration 016 stores bounded correction reports in a pending queue, grants only a definer submission function, and exposes a read-only admin review view. Reports never mutate facilities. A staffed moderation process and deployed abuse/privacy validation are still required.
 - Nearby privacy at the application layer is covered by POST contract and E2E tests. The production nearby privacy gate and deployment access-log/body privacy remain pending provider evidence.
+
+No production or staging pass may be inferred from the runbook, CI, or local disposable DB tests. Phase 4 remains blocked until the environment and live evidence listed in `staging-live-verification.md` exist.
 
 Use [monitoring](p14-monitoring.md), [backup/recovery](p14-backup-recovery.md), and [rollback](p14-rollback.md) procedures. Cloud monitoring, alert delivery, worker hosting, and remote staging smoke remain unverified until credentials and provider settings exist.
