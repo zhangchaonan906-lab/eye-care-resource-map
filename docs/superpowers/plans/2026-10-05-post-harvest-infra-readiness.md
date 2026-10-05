@@ -33,7 +33,7 @@
 - [x] Add failing DB/API/UI tests proving bounded reports queue without changing a facility.
 - [x] Run tests to observe expected failures.
 - [x] Add a report table, constrained categories/statuses, least-privilege submit/read/disposition functions, privacy-safe form, and authenticated review queue.
-- [ ] Pass DB integration in a disposable PostGIS environment; local Docker daemon is unavailable. Unit, typecheck, lint, build, P13 browser and accessibility checks pass.
+- [x] Pass DB integration in a disposable PostGIS environment; P1–P13 database regression and correction report migration tests passed in GitHub Actions run 37325065806. Local Docker daemon is unavailable.
 
 ### Task 4: Empty and limited-data UX
 
@@ -65,6 +65,6 @@
 
 **Files:** release-gate docs and branch diff.
 
-- [x] Run Collector unit, Web unit, Ruff, mypy, lint, typecheck, build, P13 E2E/accessibility, P14 release tools, secret scan, and `git diff --check`. Database and system E2E require Docker; the CI runner will run them.
+- [x] Run Collector unit, Web unit, Ruff, mypy, lint, typecheck, build, P13 E2E/accessibility, P14 release tools, secret scan, and `git diff --check`; GitHub Actions run 37325065806 also passed the database regression, disposable backup/restore, and P13 system E2E gates.
 - [x] Re-read each requirement and release-gate status; report unavailable external evidence as `PENDING`.
-- [ ] Commit in small coherent changes, push `post-harvest-infra-readiness`, and open the requested-title PR.
+- [x] Commit in small coherent changes, push `post-harvest-infra-readiness`, and open PR #34 with the requested title; CI passed.

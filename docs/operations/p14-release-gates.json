@@ -1,7 +1,7 @@
 {
   "formatVersion": 1,
   "environment": "production-release",
-  "asOf": "2026-10-05T13:49:06Z",
+  "asOf": "2026-10-05T14:32:41Z",
   "gates": {
     "SYSTEM_QA": {
       "status": "PASS",
@@ -165,11 +165,11 @@
       "verifiedAt": "2026-10-05T13:49:06Z"
     },
     "CORRECTION_QUEUE_CODE": {
-      "status": "PENDING",
+      "status": "PASS",
       "owner": "web-and-database-owner",
-      "evidence": "Migration 016, public/admin routes, UI, least-privilege role, idempotent review transitions, and unit/database tests are implemented. Disposable PostGIS execution is pending CI because Docker is unavailable in the local environment.",
+      "evidence": "Migration 016, public/admin routes, UI, least-privilege role, idempotent review transitions, and unit/database tests are implemented. P1–P13 database regression and P13 system E2E passed in PR #34 CI run 37325065806. Live intake, staffed triage/retention, and deployed privacy verification remain pending.",
       "requiredAction": "Require P1–P14 database regression and P13 system E2E CI to pass before setting this code gate to PASS.",
-      "verifiedAt": "2026-10-05T13:49:06Z"
+      "verifiedAt": "2026-10-05T14:32:41Z"
     },
     "EMPTY_DATA_COVERAGE_UX": {
       "status": "PASS",
@@ -186,4 +186,4 @@
       "verifiedAt": "2026-10-05T13:49:06Z"
     }
   }
-}
+}\n
