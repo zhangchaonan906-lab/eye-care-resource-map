@@ -91,5 +91,6 @@ export const RATE_LIMITS = {
   search: { name: "search", limit: 60, windowSeconds: 60 },
   nearby: { name: "nearby", limit: 30, windowSeconds: 60 },
   correction: { name: "correction", limit: 5, windowSeconds: 3600 },
+  adminSession: { name: "admin-session", limit: 120, windowSeconds: 60 },
   adminLogin: { name: "admin-login", limit: 10, windowSeconds: 60 },
 } satisfies Record<string, RateLimitPolicy>;

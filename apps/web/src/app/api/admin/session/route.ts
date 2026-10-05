@@ -3,7 +3,7 @@ import { rateLimitResponse, RATE_LIMITS } from "@/lib/rate-limit/distributed";
 
 export const dynamic = "force-dynamic";
 export async function GET(request: Request) {
-  const limited = await rateLimitResponse(request, RATE_LIMITS.adminLogin);
+  const limited = await rateLimitResponse(request, RATE_LIMITS.adminSession);
   if (limited) return limited;
   return request.headers.get("cookie")?.includes("eye_admin_session=") ? getAdminSession(request) : adminSessionChallenge();
 }
