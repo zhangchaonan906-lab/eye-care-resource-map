@@ -15,6 +15,7 @@ export P13_GEOCODE_PASSWORD="$(random_secret)"
 export P13_PUBLIC_API_PASSWORD="$(random_secret)"
 export P13_ADMIN_DATABASE_PASSWORD="$(random_secret)"
 export P13_SYNC_PASSWORD="$(random_secret)"
+export P13_CORRECTION_PASSWORD="$(random_secret)"
 
 export DATABASE_URL="postgresql://eye_collector_runtime:${P13_COLLECTOR_PASSWORD}@127.0.0.1:${port}/eye"
 export ETL_DATABASE_URL="postgresql://eye_etl_runtime:${P13_ETL_PASSWORD}@127.0.0.1:${port}/eye"
@@ -22,6 +23,7 @@ export GEOCODE_DATABASE_URL="postgresql://eye_geocode_runtime:${P13_GEOCODE_PASS
 export PUBLIC_API_DATABASE_URL="postgresql://eye_public_api_runtime:${P13_PUBLIC_API_PASSWORD}@127.0.0.1:${port}/eye"
 export ADMIN_DATABASE_URL="postgresql://eye_admin_review_runtime:${P13_ADMIN_DATABASE_PASSWORD}@127.0.0.1:${port}/eye"
 export SYNC_DATABASE_URL="postgresql://eye_sync_worker_runtime:${P13_SYNC_PASSWORD}@127.0.0.1:${port}/eye"
+export CORRECTION_DATABASE_URL="postgresql://eye_correction_runtime:${P13_CORRECTION_PASSWORD}@127.0.0.1:${port}/eye"
 export DATABASE_ADMIN_URL="postgresql://eye:${EYE_MAP_POSTGRES_PASSWORD}@127.0.0.1:${port}/eye"
 
 compose() { docker compose -p "$project_name" "$@"; }
@@ -43,8 +45,8 @@ compose exec -T db psql -h 127.0.0.1 -U eye -d p14_migration_clean -v ON_ERROR_S
 migration_database_url="${DATABASE_ADMIN_URL%/eye}/p14_migration_clean"
 DATABASE_ADMIN_URL="$migration_database_url" node scripts/apply-migrations.mjs
 DATABASE_ADMIN_URL="$migration_database_url" node scripts/apply-migrations.mjs
-migration_count="$(compose exec -T db psql -h 127.0.0.1 -U eye -d p14_migration_clean -A -t -c "SELECT count(*) FROM public.schema_migrations WHERE version BETWEEN '001' AND '015'" | tr -d '\r ' )"
-test "$migration_count" = "15"
+migration_count="$(compose exec -T db psql -h 127.0.0.1 -U eye -d p14_migration_clean -A -t -c "SELECT count(*) FROM public.schema_migrations WHERE version BETWEEN '001' AND '016'" | tr -d '\r ' )"
+test "$migration_count" = "16"
 
 python3 -m pip install -e "services/collector[dev]"
 (cd services/collector && python3 -m pytest -m database -q)

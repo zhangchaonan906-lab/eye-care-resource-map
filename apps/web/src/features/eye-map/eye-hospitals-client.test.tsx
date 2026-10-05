@@ -482,4 +482,16 @@ describe("EyeHospitalsClient", () => {
     expect(screen.getByRole("combobox", { name: "机构类型" })).toBeEnabled();
     expect(screen.getByRole("combobox", { name: "附近搜索半径" })).toBeEnabled();
   });
+
+  it("explains public data coverage is still being built without implying national completeness", async () => {
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+      const url = new URL(String(input), "http://localhost");
+      if (url.pathname === "/api/meta/categories") return categories();
+      return response({ data: [], meta: { nextCursor: null }, error: null });
+    }));
+    render(<EyeHospitalsClient />);
+    expect(await screen.findByText("当前公开数据覆盖仍在逐步完善")).toBeInTheDocument();
+    expect(screen.getByText("仅展示已核验且允许公开查询的机构，不代表全国完整名录。"))
+      .toBeInTheDocument();
+  });
 });

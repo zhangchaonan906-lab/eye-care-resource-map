@@ -2,12 +2,13 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 
-type QueueType = "candidates" | "duplicates" | "locations" | "facilities" | "imports" | "audit" | "syncPolicies" | "syncTasks" | "syncAlerts";
+type QueueType = "candidates" | "duplicates" | "locations" | "facilities" | "imports" | "audit" | "corrections" | "syncPolicies" | "syncTasks" | "syncAlerts";
 type Row = Record<string, unknown> & { id: string };
 const TABS: Array<{ key: QueueType; label: string }> = [
   { key: "candidates", label: "候选审核" }, { key: "duplicates", label: "重复冲突" },
   { key: "locations", label: "坐标审核" }, { key: "facilities", label: "发布审核" },
   { key: "imports", label: "运行记录" }, { key: "audit", label: "审计记录" },
+  { key: "corrections", label: "纠错报告" },
   { key: "syncPolicies", label: "同步来源" }, { key: "syncTasks", label: "同步任务" }, { key: "syncAlerts", label: "同步告警" },
 ];
 const STATUS_OPTIONS: Record<QueueType, Array<[string, string]>> = {
@@ -17,11 +18,12 @@ const STATUS_OPTIONS: Record<QueueType, Array<[string, string]>> = {
   facilities: [["", "全部状态"], ["in_review", "待核验"], ["verified", "待发布"], ["published", "已发布"], ["withdrawn", "已撤回"]],
   imports: [["", "全部状态"], ["running", "运行中"], ["succeeded", "成功"], ["failed", "失败"]],
   audit: [["", "全部动作"], ["PUBLISH", "发布"], ["WITHDRAW", "撤回"], ["MERGE", "合并"]],
+  corrections: [["", "全部状态"], ["pending", "待审核"], ["reviewing", "审核中"], ["resolved", "已处理"], ["dismissed", "已忽略"]],
   syncPolicies: [["", "全部来源"], ["approved", "已批准"], ["pending", "待审核"], ["suspended", "已暂停"]],
   syncTasks: [["", "全部状态"], ["queued", "排队中"], ["running", "运行中"], ["retry_wait", "等待重试"], ["succeeded", "成功"], ["dead_letter", "死信"]],
   syncAlerts: [["", "全部级别"], ["warning", "警告"], ["error", "错误"], ["critical", "严重"]],
 };
-const STATUS_COLUMN: Record<QueueType, string> = { candidates: "match_status", duplicates: "resolution", locations: "validation_status", facilities: "verification_status", imports: "status", audit: "action", syncPolicies: "source_status", syncTasks: "status", syncAlerts: "severity" };
+const STATUS_COLUMN: Record<QueueType, string> = { candidates: "match_status", duplicates: "resolution", locations: "validation_status", facilities: "verification_status", imports: "status", audit: "action", corrections: "status", syncPolicies: "source_status", syncTasks: "status", syncAlerts: "severity" };
 
 function display(value: unknown): string {
   if (value === null || value === undefined || value === "") return "—";
@@ -121,6 +123,11 @@ export default function AdminConsole({ username }: { username: string }) {
       <button disabled={busy || String(selected.verification_status) !== "verified" || (Array.isArray((selected.publication_checklist as { blockers?: unknown[] })?.blockers) && ((selected.publication_checklist as { blockers: unknown[] }).blockers.length > 0))} onClick={() => void decide("PUBLISH", {}, true)}>发布</button>
       <button disabled={busy} onClick={() => void decide("RETURN_TO_REVIEW", {}, true)}>退回审核</button><button className="admin-button--danger" disabled={busy || String(selected.verification_status) !== "published"} onClick={() => void decide("WITHDRAW", {}, true)}>撤回发布</button>
     </div>;
+    if (tab === "corrections") return <div className="admin-actions">
+      {selected.status === "pending" && <button disabled={busy} onClick={() => void decide("START_REVIEW")}>开始审核</button>}
+      {selected.status === "reviewing" && <button disabled={busy} onClick={() => void decide("RESOLVE", {}, true)}>标记已处理</button>}
+      {["pending", "reviewing"].includes(String(selected.status)) && <button className="admin-button--danger" disabled={busy} onClick={() => void decide("DISMISS", {}, true)}>忽略此报告</button>}
+    </div>;
     return null;
   }
 
@@ -137,17 +144,18 @@ export default function AdminConsole({ username }: { username: string }) {
       {error && <p className="admin-error" role="alert">{error}</p>}{busy && <p className="admin-muted">正在加载…</p>}
       {!busy && !error && rows.length === 0 && <p className="admin-empty">当前筛选没有待处理记录。</p>}
       <ul>{rows.map((row) => <li key={row.id}><button data-testid={`review-row-${tab}-${row.id}`} className={selected?.id === row.id ? "is-selected" : ""} onClick={() => setSelected(row)}>
-        <strong>{display(row.name ?? row.parsed_name ?? row.candidate_name ?? row.source_name ?? row.entity ?? row.id)}</strong>
-        <span>{display(row.address ?? row.parsed_address ?? row.query_address ?? row.reason ?? row.action)}</span>
+        <strong>{display(row.name ?? row.parsed_name ?? row.candidate_name ?? row.facility_name ?? row.source_name ?? row.entity ?? row.id)}</strong>
+        <span>{display(row.address ?? row.parsed_address ?? row.query_address ?? row.description ?? row.reason ?? row.action)}</span>
         <small>{display(row[STATUS_COLUMN[tab]])} · {row.id}</small>
       </button></li>)}</ul>
       {nextCursor && <button className="admin-next" disabled={busy} onClick={() => setCursor(nextCursor)}>加载下一页</button>}
     </section>
     <section className="admin-detail" aria-label="审核详情">
       {!selected ? <div className="admin-empty">选择左侧记录查看审核信息。</div> : <>
-        <div className="admin-detail__heading"><div><p className="admin-eyebrow">REVIEW RECORD</p><h3>{display(selected.name ?? selected.parsed_name ?? selected.candidate_name ?? selected.id)}</h3></div><code>{selected.id}</code></div>
+        <div className="admin-detail__heading"><div><p className="admin-eyebrow">REVIEW RECORD</p><h3>{display(selected.name ?? selected.parsed_name ?? selected.candidate_name ?? selected.facility_name ?? selected.id)}</h3></div><code>{selected.id}</code></div>
         {tab === "facilities" && <div className="admin-checklist"><h4>发布检查清单</h4>{Object.entries((selected.publication_checklist as Record<string, unknown>) ?? {}).filter(([key]) => key !== "blockers" && key !== "exists").map(([key,value]) => <p key={key} className={value ? "is-pass" : "is-fail"}>{value ? "✓" : "✗"} {key}</p>)}{Array.isArray((selected.publication_checklist as { blockers?: unknown[] })?.blockers) && <p className="admin-error">阻塞项：{display((selected.publication_checklist as { blockers: unknown[] }).blockers)}</p>}</div>}
         <dl>{detailKeys.map((key) => <div key={key}><dt>{key}</dt><dd>{display(selected[key])}</dd></div>)}</dl>
+        {tab === "corrections" && <p className="admin-muted">纠错内容仅供人工复核；该队列不提供直接修改机构数据的操作。</p>}
         {TABS.find((item) => item.key === tab)?.key && !["audit", "imports", "syncTasks", "syncAlerts"].includes(tab) && <div className="admin-decision"><label>操作理由（5–500 字）<textarea minLength={5} maxLength={500} value={reason} onChange={(event) => setReason(event.target.value)} /></label>{actionButtons()}</div>}
       </>}
       {actionMessage && <p role="status" className="admin-status">{actionMessage}</p>}

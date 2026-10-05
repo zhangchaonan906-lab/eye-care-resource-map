@@ -12,6 +12,7 @@ const required = [
   "EYE_MAP_DB_PORT", "EYE_MAP_POSTGRES_PASSWORD", "P13_COLLECTOR_PASSWORD",
   "P13_ETL_PASSWORD", "P13_GEOCODE_PASSWORD", "P13_PUBLIC_API_PASSWORD",
   "P13_ADMIN_DATABASE_PASSWORD", "P13_SYNC_PASSWORD",
+  "P13_CORRECTION_PASSWORD",
 ];
 for (const name of required) {
   if (!process.env[name]) throw new Error(`${name} is required for disposable database bootstrap`);
@@ -53,7 +54,7 @@ psql("/workspace/db/migrations/009_real_export_compatibility.sql");
 psql("/workspace/db/migrations/010_etl_import_run_scope.sql");
 for (const file of [
   "011_public_api.sql", "012_nearby_api.sql", "013_admin_review.sql",
-  "014_incremental_sync.sql", "015_public_query_performance.sql",
+  "014_incremental_sync.sql", "015_public_query_performance.sql", "016_correction_reports.sql",
 ]) psql(`/workspace/db/migrations/${file}`);
 
 for (const [file, variable, value] of [
@@ -63,6 +64,7 @@ for (const [file, variable, value] of [
   ["provision-public-api-login.sql", "api_password", process.env.P13_PUBLIC_API_PASSWORD],
   ["provision-admin-review-login.sql", "admin_password", process.env.P13_ADMIN_DATABASE_PASSWORD],
   ["provision-sync-worker-login.sql", "sync_password", process.env.P13_SYNC_PASSWORD],
+  ["provision-correction-submit-login.sql", "correction_password", process.env.P13_CORRECTION_PASSWORD],
 ]) psql(`/workspace/scripts/${file}`, [`${variable}=${value}`]);
 
 psql("/workspace/scripts/seed-fixture-source.sql");
@@ -71,7 +73,7 @@ for (const file of [
   "004_collector_permissions.sql", "005_etl_candidates.sql", "006_geocoding.sql",
   "007_source_open_data_rights.sql", "009_real_export_compatibility.sql",
   "011_public_api.sql", "012_nearby_api.sql", "013_admin_review.sql",
-  "014_incremental_sync.sql", "p13_synthetic_performance.sql",
+  "014_incremental_sync.sql", "p13_synthetic_performance.sql", "016_correction_reports.sql",
 ]) psql(`/workspace/db/tests/${file}`);
 
 const migrationManifest = JSON.parse(readFileSync(resolve(root, "db/migrations/manifest.json"), "utf8"));
