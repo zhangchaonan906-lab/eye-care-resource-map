@@ -8,10 +8,16 @@ const localWindows = new Map<string, { count: number; resetAt: number }>();
 const incrementScript = "local count=redis.call('INCR',KEYS[1]); if count==1 then redis.call('EXPIRE',KEYS[1],ARGV[1]); end; return {count,redis.call('TTL',KEYS[1])}";
 
 function clientKey(request: Request, policy: RateLimitPolicy): string | null {
+  if (process.env.P13_SYSTEM_TEST_MODE === "true") {
+    const secret = process.env.RATE_LIMIT_HASH_SECRET;
+    if (!secret) return null;
+    const digest = createHmac("sha256", secret).update("p13-system-test").digest("hex");
+    return `eye-map:rl:${policy.name}:${digest}`;
+  }
   const trustedProxy = process.env.TRUST_PROXY_HEADERS === "true";
   const clientAddress = trustedProxy
     ? request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || request.headers.get("x-real-ip")?.trim()
-      || (process.env.P13_SYSTEM_TEST_MODE === "true" ? "p13-system-test" : undefined)
+      || undefined
     : process.env.APP_ENV === "production" || process.env.APP_ENV === "staging" ? null : "shared";
   if (!clientAddress) return null;
   if (trustedProxy && clientAddress !== "p13-system-test" && !isIP(clientAddress)) return null;

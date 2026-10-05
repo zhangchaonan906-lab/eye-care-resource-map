@@ -30,6 +30,22 @@ describe("distributed rate limit", () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
+  it("uses a deterministic identity in system-test mode despite local proxy headers", async () => {
+    vi.stubEnv("APP_ENV", "staging");
+    vi.stubEnv("P13_SYSTEM_TEST_MODE", "true");
+    vi.stubEnv("TRUST_PROXY_HEADERS", "true");
+    vi.stubEnv("RATE_LIMIT_HASH_SECRET", "system-test-hash-secret");
+    vi.stubEnv("UPSTASH_REDIS_REST_URL", "http://127.0.0.1:4321");
+    vi.stubEnv("UPSTASH_REDIS_REST_TOKEN", "system-test-token");
+    const fetchMock = vi.fn(async () => Response.json({ result: [1, 60] }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(checkRateLimit(new Request("https://example.test", {
+      headers: { "x-forwarded-for": "localhost:3100" },
+    }), policy)).resolves.toEqual({ allowed: true, limit: 2, remaining: 1, retryAfterSeconds: 0 });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
   it("fails closed outside local/test when shared storage is missing", async () => {
     vi.stubEnv("APP_ENV", "staging");
     vi.stubEnv("TRUST_PROXY_HEADERS", "true");
