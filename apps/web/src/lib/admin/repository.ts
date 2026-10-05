@@ -1,6 +1,6 @@
 import { Pool, type QueryResultRow } from "pg";
 
-export type ReviewType = "candidates" | "duplicates" | "locations" | "facilities" | "imports" | "audit";
+export type ReviewType = "candidates" | "duplicates" | "locations" | "facilities" | "imports" | "audit" | "corrections";
 export type SyncReviewType = "policies" | "tasks" | "alerts";
 const VIEW_BY_TYPE: Record<ReviewType, string> = {
   candidates: "app_private.admin_candidate_review",
@@ -9,6 +9,7 @@ const VIEW_BY_TYPE: Record<ReviewType, string> = {
   facilities: "app_private.admin_facility_review",
   imports: "app_private.admin_import_runs",
   audit: "app_private.admin_audit_feed",
+  corrections: "app_private.admin_correction_review",
 };
 
 export class AdminReviewRepository {
@@ -34,7 +35,7 @@ export class AdminReviewRepository {
     const where: string[] = [];
     if (options.cursor) { values.push(options.cursor); where.push(`id < $${values.length}::uuid`); }
     if (options.status) {
-      const column = type === "candidates" ? "match_status" : type === "duplicates" ? "resolution" : type === "locations" ? "validation_status" : type === "facilities" ? "verification_status" : type === "imports" ? "status" : null;
+      const column = type === "candidates" ? "match_status" : type === "duplicates" ? "resolution" : type === "locations" ? "validation_status" : type === "facilities" ? "verification_status" : type === "imports" || type === "corrections" ? "status" : null;
       if (column) { values.push(options.status); where.push(`${column} = $${values.length}`); }
     }
     if (options.sourceId && type === "candidates") { values.push(options.sourceId); where.push(`source_id = $${values.length}::uuid`); }
@@ -88,6 +89,15 @@ export class AdminReviewRepository {
         `SELECT app_private.admin_set_source_sync_paused($1::uuid,$2::uuid,$3::uuid,$4,$5) AS result`,
         [input.sourceId, input.actorId, input.requestId, input.reason, input.action === "PAUSE_SYNC"],
       );
+    return result.rows[0]?.result;
+  }
+
+  async decideCorrection(input: { reportId: string; actorId: string; requestId: string; action: "START_REVIEW" | "RESOLVE" | "DISMISS"; reason: string }): Promise<unknown> {
+    await this.assertRoleMembership();
+    const result = await this.pool.query<{ result: unknown }>(
+      "SELECT app_private.admin_decide_correction_report($1::uuid,$2::uuid,$3::uuid,$4,$5) AS result",
+      [input.reportId, input.actorId, input.requestId, input.action, input.reason],
+    );
     return result.rows[0]?.result;
   }
 

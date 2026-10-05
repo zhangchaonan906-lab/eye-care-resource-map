@@ -72,17 +72,21 @@ function configureDatabase(passwords, port, webPort) {
   process.env.P13_PUBLIC_API_PASSWORD = passwords.publicApi;
   process.env.P13_ADMIN_DATABASE_PASSWORD = passwords.admin;
   process.env.P13_SYNC_PASSWORD = passwords.sync;
+  process.env.P13_CORRECTION_PASSWORD = passwords.correction;
   process.env.DATABASE_URL = `postgresql://eye_collector_runtime:${passwords.collector}@127.0.0.1:${port}/eye`;
   process.env.ETL_DATABASE_URL = `postgresql://eye_etl_runtime:${passwords.etl}@127.0.0.1:${port}/eye`;
   process.env.GEOCODE_DATABASE_URL = `postgresql://eye_geocode_runtime:${passwords.geocode}@127.0.0.1:${port}/eye`;
   process.env.PUBLIC_API_DATABASE_URL = `postgresql://eye_public_api_runtime:${passwords.publicApi}@127.0.0.1:${port}/eye`;
   process.env.ADMIN_DATABASE_URL = `postgresql://eye_admin_review_runtime:${passwords.admin}@127.0.0.1:${port}/eye`;
   process.env.SYNC_DATABASE_URL = `postgresql://eye_sync_worker_runtime:${passwords.sync}@127.0.0.1:${port}/eye`;
+  process.env.CORRECTION_DATABASE_URL = `postgresql://eye_correction_runtime:${passwords.correction}@127.0.0.1:${port}/eye`;
   process.env.DATABASE_ADMIN_URL = `postgresql://eye:${passwords.root}@127.0.0.1:${port}/eye`;
   process.env.NEXT_TELEMETRY_DISABLED = "1";
   process.env.PLAYWRIGHT_PORT = String(webPort);
   process.env.P13_SYSTEM_TEST_MODE = "true";
   process.env.APP_ENV = "staging";
+  process.env.TRUST_PROXY_HEADERS = "true";
+  process.env.RATE_LIMIT_HASH_SECRET = secret();
   process.env.RELEASE_COMMIT_SHA = run("git", ["rev-parse", "HEAD"]).stdout.trim();
   process.env.BUILD_TIMESTAMP = new Date().toISOString();
 }
@@ -90,7 +94,7 @@ function configureDatabase(passwords, port, webPort) {
 async function main() {
   const port = await freePort();
   const webPort = await freePort();
-  configureDatabase({ root: secret(), collector: secret(), etl: secret(), geocode: secret(), publicApi: secret(), admin: secret(), sync: secret() }, port, webPort);
+  configureDatabase({ root: secret(), collector: secret(), etl: secret(), geocode: secret(), publicApi: secret(), admin: secret(), sync: secret(), correction: secret() }, port, webPort);
   provisionAppAuth();
   let databaseStarted = false;
   try {
@@ -157,6 +161,7 @@ async function main() {
       "P13_ADMIN_PASSWORD", "ADMIN_PASSWORD_HASH", "ADMIN_SESSION_SECRET", "ADMIN_ACTOR_ID",
       "NEXT_TELEMETRY_DISABLED", "PLAYWRIGHT_PORT", "P13_SYSTEM_TEST_MODE", "P13_CANDIDATE_ID",
       "APP_ENV", "SITE_URL", "RELEASE_COMMIT_SHA", "BUILD_TIMESTAMP",
+      "CORRECTION_DATABASE_URL", "P13_CORRECTION_PASSWORD", "TRUST_PROXY_HEADERS", "RATE_LIMIT_HASH_SECRET",
       "P13_DUPLICATE_CASE_ID", "P13_LOCATION_ID", "P13_ALTERNATIVE_CANDIDATE_ID",
       "P13_STRESS_FACILITY_ID",
     ]) delete process.env[name];

@@ -11,6 +11,7 @@ import { LocationControl } from "./location-control";
 import { MapCanvas } from "./map-canvas";
 import { SearchAndFilters, type CategoryOption } from "./search-and-filters";
 import { formatFacilityCategory } from "./facility-presentation";
+import { CorrectionReportForm } from "./correction-report-form";
 
 type ViewportState = Viewport | null;
 type LoadState = "idle" | "loading" | "ready" | "empty" | "zoom" | "too-large" | "incomplete" | "error" | "region-invalid";
@@ -426,6 +427,9 @@ export function EyeHospitalsClient() {
           <p className="eye-map__eyebrow">医疗资源 · 地图浏览</p>
           <h1>全国眼科医疗资源地图</h1>
           <p className="eye-map__disclaimer">信息供查询，实际门诊与服务请以医院官方信息为准。</p>
+          <p className="eye-map__coverage-note"><strong>当前公开数据覆盖仍在逐步完善</strong></p>
+          <p className="eye-map__coverage-note">仅展示已核验且允许公开查询的机构，不代表全国完整名录。</p>
+          <CorrectionReportForm />
         </div>
         <LocationControl onLocated={located} />
       </header>

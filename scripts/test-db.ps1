@@ -6,7 +6,7 @@ $environmentNames = @(
   'EYE_MAP_POSTGRES_PASSWORD', 'EYE_MAP_DB_PORT', 'DATABASE_URL', 'ETL_DATABASE_URL',
   'DATABASE_ADMIN_URL', 'GEOCODE_DATABASE_URL', 'PUBLIC_API_DATABASE_URL',
   'ADMIN_DATABASE_URL', 'SYNC_DATABASE_URL', 'P13_COLLECTOR_PASSWORD', 'P13_ETL_PASSWORD',
-  'P13_GEOCODE_PASSWORD', 'P13_PUBLIC_API_PASSWORD', 'P13_ADMIN_DATABASE_PASSWORD', 'P13_SYNC_PASSWORD', 'APP_ENV'
+  'P13_GEOCODE_PASSWORD', 'P13_PUBLIC_API_PASSWORD', 'P13_ADMIN_DATABASE_PASSWORD', 'P13_SYNC_PASSWORD', 'P13_CORRECTION_PASSWORD', 'APP_ENV'
 )
 $environmentNames += @('P14_BACKUP_DIR','P14_PG_TOOL_CONTAINER','RESTORE_DATABASE_URL','RESTORE_CONFIRM','RESTORE_BACKUP_FILE')
 $previousEnvironment = @{}
@@ -31,12 +31,14 @@ try {
   $env:P13_PUBLIC_API_PASSWORD = New-TestSecret
   $env:P13_ADMIN_DATABASE_PASSWORD = New-TestSecret
   $env:P13_SYNC_PASSWORD = New-TestSecret
+  $env:P13_CORRECTION_PASSWORD = New-TestSecret
   $env:DATABASE_URL = "postgresql://eye_collector_runtime:$env:P13_COLLECTOR_PASSWORD@127.0.0.1:$testPort/eye"
   $env:ETL_DATABASE_URL = "postgresql://eye_etl_runtime:$env:P13_ETL_PASSWORD@127.0.0.1:$testPort/eye"
   $env:GEOCODE_DATABASE_URL = "postgresql://eye_geocode_runtime:$env:P13_GEOCODE_PASSWORD@127.0.0.1:$testPort/eye"
   $env:PUBLIC_API_DATABASE_URL = "postgresql://eye_public_api_runtime:$env:P13_PUBLIC_API_PASSWORD@127.0.0.1:$testPort/eye"
   $env:ADMIN_DATABASE_URL = "postgresql://eye_admin_review_runtime:$env:P13_ADMIN_DATABASE_PASSWORD@127.0.0.1:$testPort/eye"
-  $env:SYNC_DATABASE_URL = "postgresql://eye_sync_worker_runtime:$env:P13_SYNC_PASSWORD@127.0.0.1:$testPort/eye"
+    $env:SYNC_DATABASE_URL = "postgresql://eye_sync_worker_runtime:$env:P13_SYNC_PASSWORD@127.0.0.1:$testPort/eye"
+    $env:CORRECTION_DATABASE_URL = "postgresql://eye_correction_runtime:$env:P13_CORRECTION_PASSWORD@127.0.0.1:$testPort/eye"
   $env:DATABASE_ADMIN_URL = "postgresql://eye:$env:EYE_MAP_POSTGRES_PASSWORD@127.0.0.1:$testPort/eye"
   Push-Location $repoRoot
   try {
@@ -59,7 +61,7 @@ try {
     node scripts/apply-migrations.mjs
     if ($LASTEXITCODE -ne 0) { throw 'Migration runner idempotent replay verification failed.' }
     $migrationCount = (docker compose -p $projectName exec -T db psql -h 127.0.0.1 -U eye -d p14_migration_clean -A -t -c "SELECT count(*) FROM public.schema_migrations" | Out-String).Trim()
-    if ($LASTEXITCODE -ne 0 -or $migrationCount -ne '15') { throw "Migration registry count is not 15: $migrationCount" }
+    if ($LASTEXITCODE -ne 0 -or $migrationCount -ne '16') { throw "Migration registry count is not 16: $migrationCount" }
     $env:DATABASE_ADMIN_URL = $sourceAdminUrl
     Remove-Item Env:P14_PG_TOOL_CONTAINER -ErrorAction SilentlyContinue
     py -m pip install -e 'services/collector[dev]'

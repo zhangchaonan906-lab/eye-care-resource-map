@@ -1,6 +1,7 @@
 import Link from "next/link";
 import type { PublicFacility } from "../../lib/public-api/types";
 import { formatFacilityCategory, formatVerifiedDate, safeSourceUrl } from "./facility-presentation";
+import { CorrectionReportForm } from "./correction-report-form";
 
 type Props = { facility: PublicFacility; labels?: Map<string, string>; mapLink?: boolean; detailLink?: boolean };
 
@@ -28,6 +29,7 @@ export function FacilityDetailContent({ facility, labels = new Map(), mapLink = 
       <dt>来源</dt><dd><FacilitySources facility={facility} /></dd>
     </dl>
     <p className="eye-map__disclaimer">信息供查询，实际门诊与服务请以医院官方信息为准。</p>
+    <CorrectionReportForm facilityId={facility.id} compact />
     {detailLink && <p><Link href={`/hospitals/${facility.id}`}>查看完整详情</Link></p>}
     {mapLink && <p><Link href={`/resources/eye-hospitals?facility=${encodeURIComponent(facility.id)}`}>在地图中查看</Link></p>}
   </>;

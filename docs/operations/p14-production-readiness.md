@@ -2,7 +2,7 @@
 
 **Status: PARTIAL — production launch NO-GO**
 
-**Evidence snapshot:** 2026-10-02 UTC
+**Evidence snapshot:** 2026-10-05 UTC
 
 **P14-A merge:** PR #25 squash-merged to `main` at `db50b4aa72d5577dc134e8127460e757c3b54de2`.
 
@@ -18,7 +18,7 @@ The final P5 report records an isolated local pilot of 50 Beijing source rows an
 
 | Gate | Status | Evidence and required action |
 |---|---|---|
-| `STAGING_DATABASE` | PENDING | No isolated remote PostgreSQL/PostGIS credentials. Provision a separate database, apply migrations 001–015, and verify role isolation/least privilege. |
+| `STAGING_DATABASE` | PENDING | No isolated remote PostgreSQL/PostGIS credentials. Provision a separate database, apply migrations 001–016, and verify role isolation/least privilege. |
 | `STAGING_DEPLOYMENT` | PENDING | No staging URL or hosting credentials. Select host, inject secrets through its secret manager, and deploy Web and a fixture-only worker artifact. |
 | `STAGING_HEALTH` | PENDING | Health route contracts pass automated tests; no remote host response has been observed. |
 | `STAGING_SMOKE` | PENDING | Run `scripts/staging-smoke.mjs` against HTTPS staging and record live/ready/version, map, admin login, nearby POST, noindex, security/cache headers, and commit SHA. |
@@ -70,7 +70,7 @@ Any future batch must remain auditable end to end: official source → immutable
 
 ### Correction and feedback entry
 
-`DATA_CORRECTION_ENTRY=PENDING`. Choose a public correction mailbox or approved form, publish a suitable privacy notice, assign a human triage owner, and track address, specialty, closure, and coordinate reports. A submission must never update canonical records automatically; accepted corrections go through the existing review workflow.
+`DATA_CORRECTION_ENTRY=PENDING`. This phase adds a bounded public report form, dedicated submit-only database role, migration-backed pending queue, and authenticated read-only admin queue. Reports cannot mutate canonical facility rows. Before enabling a live form, assign a human triage owner, publish retention/response details, and verify deployed abuse controls and privacy handling.
 
 ## 5. Security / Privacy
 
@@ -78,7 +78,7 @@ Any future batch must remain auditable end to end: official source → immutable
 |---|---|---|
 | `DEPLOYMENT_NEARBY_PRIVACY` | PENDING | Application sends nearby coordinates in POST JSON and does not log bodies. Verify browser URL/history, application logs, host access logs, and gateway logs with sentinel coordinates; prove request-body capture/retention is off. |
 | `PRODUCTION_SECURITY_HEADERS` | PENDING | Verify headers on actual HTTPS staging. CSP remains Report-Only; collect reports and assess legitimate violations before considering enforcement. |
-| `PRODUCTION_RATE_LIMITING` | PENDING | No distributed/edge limiter selected. Protect public map, search, details, nearby, and admin login; use distinct policies for public reads and login. An in-process map is insufficient. |
+| `PRODUCTION_RATE_LIMITING` | PENDING | Shared Redis REST integration now protects facilities, search, detail, nearby, correction submissions, and admin login with separate fixed-window limits; missing backend/proxy identity fails closed in staging/production. Provider credentials and live multi-instance behavior are not configured or tested. |
 | `NEARBY_POST_CONTRACT` | PASS | Automated code/CI evidence only; must also pass deployed staging smoke. |
 
 No privacy gate is passed based solely on source code when hosting/gateway behavior is unknown.

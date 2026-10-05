@@ -1,6 +1,6 @@
 {
   "formatVersion": 1,
-  "maxVersion": "015",
+  "maxVersion": "016",
   "migrations": [
     {
       "version": "001",
@@ -76,6 +76,11 @@
       "version": "015",
       "filename": "015_public_query_performance.sql",
       "sha256": "e9469deda60a43a97b8890a01f168c76fe0f85f31acd29272eb177b82866a02d"
+    },
+    {
+      "version": "016",
+      "filename": "016_correction_reports.sql",
+      "sha256": "589e01d4776605d8c60898fe2b59ceb7a781f3dbe11f18db4db8f03833f9aa65"
     }
   ]
 }

@@ -9,15 +9,15 @@ import { verifyMigrationManifest } from "../lib/migration-manifest.mjs";
 const root = resolve(fileURLToPath(new URL("../..", import.meta.url)));
 const source = join(root, "db", "migrations");
 
-test("migration inventory matches its ordered 001–015 SHA-256 manifest", () => {
+test("migration inventory matches its ordered 001–016 SHA-256 manifest", () => {
   const result = verifyMigrationManifest({
     migrationsDir: source,
     manifestPath: join(source, "manifest.json"),
   });
-  assert.equal(result.maxVersion, "015");
-  assert.equal(result.migrations.length, 15);
+  assert.equal(result.maxVersion, "016");
+  assert.equal(result.migrations.length, 16);
   assert.equal(result.migrations[0].version, "001");
-  assert.equal(result.migrations.at(-1).version, "015");
+  assert.equal(result.migrations.at(-1).version, "016");
 });
 
 test("migration checksum drift fails closed", () => {
@@ -41,7 +41,7 @@ test("migration checksum is stable across Windows and Unix line endings", () => 
     const file = join(migrationsDir, "001_core.sql");
     const unixText = readFileSync(file, "utf8").replace(/\r\n?/g, "\n");
     writeFileSync(file, unixText.replace(/\n/g, "\r\n"));
-    assert.equal(verifyMigrationManifest({ migrationsDir, manifestPath: join(migrationsDir, "manifest.json") }).maxVersion, "015");
+    assert.equal(verifyMigrationManifest({ migrationsDir, manifestPath: join(migrationsDir, "manifest.json") }).maxVersion, "016");
   } finally {
     rmSync(temporary, { recursive: true, force: true });
   }

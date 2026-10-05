@@ -2,7 +2,7 @@ import { authenticatedSession } from "@/lib/admin/session-handlers";
 import { getAdminReviewRepository, type ReviewType } from "@/lib/admin/repository";
 
 export const dynamic = "force-dynamic";
-const types: ReviewType[] = ["candidates", "duplicates", "locations", "facilities", "imports", "audit"];
+const types: ReviewType[] = ["candidates", "duplicates", "locations", "facilities", "imports", "audit", "corrections"];
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 export async function GET(request: Request) {

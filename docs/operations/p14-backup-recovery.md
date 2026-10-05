@@ -10,7 +10,7 @@ Backups may contain raw source records. Store only in private, access-controlled
 
 Provision all expected database roles, then create a new empty recovery database from `template0`. Set `RESTORE_DATABASE_URL`, `RESTORE_BACKUP_FILE`, and `RESTORE_CONFIRM` to exactly the target database name. Production-like names are rejected, and the restore tool checks that the target has no user schemas or objects before proceeding. It does not drop or overwrite existing objects. The archive restores object grants; role provisioning must happen before restore. Never test restore against production.
 
-After restore, verify `schema_migrations` checksums through 015, runtime role permissions, synthetic published-facility query, audit history, source snapshot count, PostGIS location, health readiness, and public API smoke. Record backup size and backup/restore durations as drill measurements, not an SLA.
+After restore, verify `schema_migrations` checksums through 016, runtime role permissions (including the correction submitter), synthetic published-facility query, audit history, source snapshot count, PostGIS location, health readiness, and public API smoke. Record backup size and backup/restore durations as drill measurements, not an SLA.
 
 ## Recovery checklist
 
