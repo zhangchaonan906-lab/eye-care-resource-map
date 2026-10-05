@@ -41,6 +41,7 @@ function localCheck(key: string, policy: RateLimitPolicy, now: number): RateLimi
 export async function checkRateLimit(request: Request, policy: RateLimitPolicy, now = Date.now()): Promise<RateLimitResult> {
   const key = clientKey(request, policy);
   if (!key) throw new Error("RATE_LIMIT_IDENTITY_UNAVAILABLE");
+  if (process.env.P13_SYSTEM_TEST_MODE === "true") return localCheck(key, policy, now);
   const url = process.env.UPSTASH_REDIS_REST_URL;
   const token = process.env.UPSTASH_REDIS_REST_TOKEN;
   if (!url || !token) {

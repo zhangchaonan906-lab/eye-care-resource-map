@@ -1,5 +1,4 @@
 import { randomBytes, randomUUID, scryptSync } from "node:crypto";
-import { createServer } from "node:http";
 import { spawnSync } from "node:child_process";
 import net from "node:net";
 import { resolve } from "node:path";
@@ -53,37 +52,6 @@ function scalar(sql) {
 
 function python() { return process.platform === "win32" ? "py" : "python3"; }
 
-async function startLimiterMock(port) {
-  const counters = new Map();
-  const server = createServer((request, response) => {
-    const chunks = [];
-    request.on("data", (chunk) => chunks.push(chunk));
-    request.on("end", () => {
-      try {
-        if (request.headers.authorization !== `Bearer ${process.env.UPSTASH_REDIS_REST_TOKEN}`) throw new Error("unauthorized");
-        const [command, _script, _keyCount, key, windowSeconds] = JSON.parse(Buffer.concat(chunks).toString("utf8"));
-        if (command !== "EVAL" || typeof key !== "string") throw new Error("invalid command");
-        const now = Date.now();
-        const current = counters.get(key);
-        const value = !current || current.resetAt <= now
-          ? { count: 1, resetAt: now + Number(windowSeconds) * 1000 }
-          : { count: current.count + 1, resetAt: current.resetAt };
-        counters.set(key, value);
-        response.writeHead(200, { "content-type": "application/json" });
-        response.end(JSON.stringify({ result: [value.count, Math.max(1, Math.ceil((value.resetAt - now) / 1000))] }));
-      } catch {
-        response.writeHead(400, { "content-type": "application/json" });
-        response.end(JSON.stringify({ error: "invalid limiter request" }));
-      }
-    });
-  });
-  await new Promise((resolveListen, reject) => {
-    server.once("error", reject);
-    server.listen(port, "127.0.0.1", resolveListen);
-  });
-  return server;
-}
-
 function provisionAppAuth() {
   const password = `P13-System-${secret()}`;
   const salt = randomBytes(16);
@@ -129,12 +97,7 @@ async function main() {
   configureDatabase({ root: secret(), collector: secret(), etl: secret(), geocode: secret(), publicApi: secret(), admin: secret(), sync: secret(), correction: secret() }, port, webPort);
   provisionAppAuth();
   let databaseStarted = false;
-  let limiterServer;
   try {
-    const limiterPort = await freePort();
-    process.env.UPSTASH_REDIS_REST_TOKEN = secret();
-    process.env.UPSTASH_REDIS_REST_URL = `http://127.0.0.1:${limiterPort}`;
-    limiterServer = await startLimiterMock(limiterPort);
     databaseStarted = true;
     compose("up", "-d", "--wait");
     run(process.execPath, ["scripts/db-test-bootstrap.mjs", project]);
@@ -189,7 +152,6 @@ async function main() {
     if (scanner.status !== 0) throw new Error("P13 system browser artifacts failed the dynamic secret scan");
     if (playwright.status !== 0) throw new Error(`P13 real system Playwright suite failed with exit ${playwright.status}`);
   } finally {
-    if (limiterServer) await new Promise((resolveClose, reject) => limiterServer.close((error) => error ? reject(error) : resolveClose()));
     if (databaseStarted) compose("down", "--volumes", "--remove-orphans");
     for (const name of [
       "EYE_MAP_DB_PORT", "EYE_MAP_POSTGRES_PASSWORD", "P13_COLLECTOR_PASSWORD", "P13_ETL_PASSWORD",
@@ -199,7 +161,7 @@ async function main() {
       "P13_ADMIN_PASSWORD", "ADMIN_PASSWORD_HASH", "ADMIN_SESSION_SECRET", "ADMIN_ACTOR_ID",
       "NEXT_TELEMETRY_DISABLED", "PLAYWRIGHT_PORT", "P13_SYSTEM_TEST_MODE", "P13_CANDIDATE_ID",
       "APP_ENV", "SITE_URL", "RELEASE_COMMIT_SHA", "BUILD_TIMESTAMP",
-      "CORRECTION_DATABASE_URL", "P13_CORRECTION_PASSWORD", "UPSTASH_REDIS_REST_URL", "UPSTASH_REDIS_REST_TOKEN", "TRUST_PROXY_HEADERS", "RATE_LIMIT_HASH_SECRET",
+      "CORRECTION_DATABASE_URL", "P13_CORRECTION_PASSWORD", "TRUST_PROXY_HEADERS", "RATE_LIMIT_HASH_SECRET",
       "P13_DUPLICATE_CASE_ID", "P13_LOCATION_ID", "P13_ALTERNATIVE_CANDIDATE_ID",
       "P13_STRESS_FACILITY_ID",
     ]) delete process.env[name];

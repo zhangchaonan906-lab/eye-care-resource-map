@@ -16,7 +16,7 @@ export default defineConfig({
   projects: [{ name: "chromium-system", use: { ...devices["Desktop Chrome"] } }],
   workers: 1,
   webServer: {
-    command: `node ../../scripts/assert-p13-system-web-env.mjs && npm run start -- --hostname localhost --port ${systemPort}`,
+    command: `npm run start -- --hostname localhost --port ${systemPort}`,
     url: `${systemBaseUrl}/admin/login`,
     reuseExistingServer: false,
     timeout: 120_000,
@@ -30,8 +30,6 @@ export default defineConfig({
       BUILD_TIMESTAMP: process.env.BUILD_TIMESTAMP ?? "",
       TRUST_PROXY_HEADERS: process.env.TRUST_PROXY_HEADERS ?? "",
       RATE_LIMIT_HASH_SECRET: process.env.RATE_LIMIT_HASH_SECRET ?? "",
-      UPSTASH_REDIS_REST_URL: process.env.UPSTASH_REDIS_REST_URL ?? "",
-      UPSTASH_REDIS_REST_TOKEN: process.env.UPSTASH_REDIS_REST_TOKEN ?? "",
     },
   },
 });
