@@ -21,4 +21,10 @@
 | `SITE_URL` | Optional HTTPS only | Unset | Exact staging HTTPS origin | Reserved for verified production origin |
 | Basemap | Placeholder/development | Placeholder | Placeholder; no production provider | Pending provider rights and attribution review |
 
-All credentials are supplied through an approved secret store or local ignored environment file. Never commit passwords, connection strings, session secrets, tokens, or real downloaded files. `DATABASE_ADMIN_URL` is for one-shot operations only; Web and workers use their least-privilege runtime URLs. No environment credentials were present during P14-A, so staging deployment was not attempted.
+All credentials are supplied through an approved secret store or local ignored environment file. Never commit passwords, connection strings, session secrets, tokens, or real downloaded files. `DATABASE_ADMIN_URL` is for one-shot operations only; Web and workers use their least-privilege runtime URLs.
+
+## Phase 4 environment check (2026-10-05 14:55 UTC)
+
+This check found no configured staging site URL, staging database URL, shared Redis URL/token, hosting credential, SSH deployment credential, or monitoring DSN in the local process environment. The GitHub repository has no `staging` Actions environment (environment lookup returned 404), and no repository Actions secrets were listed. Docker CLI is installed, but its Linux Engine is unavailable (`docker info` cannot connect to the Docker Desktop pipe). No remote deployment, migration, backup, or live smoke was attempted. Values were checked for presence only; no secret values were read or printed.
+
+These are missing infrastructure prerequisites, not successful staging evidence. Keep all staging gates pending until a separately provisioned HTTPS Web app, isolated PostgreSQL/PostGIS, shared rate-limit backend, worker host, and monitoring/backup services are accessible.

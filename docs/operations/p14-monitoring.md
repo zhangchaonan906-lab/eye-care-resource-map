@@ -19,6 +19,10 @@ The application must not log credentials, session/CSRF values, raw source payloa
 
 Monitoring contract: **implemented in this runbook and health routes**. External alert delivery and a selected metrics provider: **pending**. Do not represent this documentation as an active alerting service.
 
+## Phase 4 live status (2026-10-05)
+
+No staging host, monitoring destination, alert integration, worker host, or staging credentials were available to this run. No external health monitor, 5xx alert, worker heartbeat, database connectivity monitor, latency dashboard, or fault-injection alert was exercised. `MONITORING` and `WORKER_HOSTING` remain **PENDING**. A future verification must record the monitor/provider, sanitized test event, observed alert, and timestamp without including secret values or exact nearby coordinates. See [the live verification record](staging-live-verification.md).
+
 ## Post-harvest Phase 3 additions
 
 - The correction queue has a bounded submit function and DB regression coverage for pending state and no facility mutation. Assign a reviewer and a response/retention policy before enabling a live form; monitor submission volume and review backlog without logging report bodies.

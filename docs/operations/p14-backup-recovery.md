@@ -22,4 +22,4 @@ After restore, verify `schema_migrations` checksums through 016, runtime role pe
 - [ ] Obtain release owner approval before routing traffic or restarting schedules.
 - [ ] Document recovery point, measured recovery time, and follow-up fixes.
 
-P14-A did not have staging DB credentials; an actual staging restore drill remains pending credentials. Disposable CI drill status must be reported from its CI run, not inferred from the runbook.
+Phase 4 verification on 2026-10-05 found no staging DB URL/credentials or Docker Engine. No real staging backup or restore was performed. The local/CI disposable synthetic drill is not staging evidence. Keep `BACKUP_RESTORE=PENDING` until a real isolated staging backup is restored into a distinct disposable target and the checks above are recorded. See [the live verification record](staging-live-verification.md).

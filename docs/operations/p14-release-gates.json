@@ -1,7 +1,7 @@
 {
   "formatVersion": 1,
   "environment": "production-release",
-  "asOf": "2026-10-05T14:32:41Z",
+  "asOf": "2026-10-05T14:56:41Z",
   "gates": {
     "SYSTEM_QA": {
       "status": "PASS",
@@ -34,44 +34,44 @@
     "STAGING_HEALTH": {
       "status": "PENDING",
       "owner": "release-engineering",
-      "evidence": "No STAGING_SITE_URL or staging host credentials are configured; no remote health response was observed.",
-      "requiredAction": "Deploy to the isolated HTTPS staging host and verify live, ready, and version endpoints.",
-      "verifiedAt": "2026-10-02T21:14:45Z"
+      "evidence": "Phase 4 access check (2026-10-05T14:56:41Z): No STAGING_SITE_URL or hosting credentials were present at the Phase 4 access check; no remote health response was observed. PR #34 is merged at 4db7db236fee1ad7c363e84dd1920af0c7e78020.",
+      "requiredAction": "Deploy to the isolated HTTPS staging host and verify liveness, readiness, and version endpoints.",
+      "verifiedAt": "2026-10-05T14:56:41Z"
     },
     "NO_REAL_SOURCE_AUTOMATION": {
       "status": "PENDING",
       "owner": "data-operations",
-      "evidence": "No staging worker or scheduler is deployed, so the real-source schedule state cannot be verified remotely. The repository workflow is fixture-first and source policies fail closed for manual-only sources.",
-      "requiredAction": "Inspect the deployed scheduler and prove all real-source schedules are disabled before staging smoke.",
-      "verifiedAt": "2026-10-02T21:14:45Z"
+      "evidence": "Phase 4 access check (2026-10-05T14:56:41Z): No worker/scheduler host or staging environment is configured, so remote schedules cannot be inspected. Repository policies are not remote proof.",
+      "requiredAction": "Inspect the deployed scheduler and prove all real-source schedules are disabled before smoke.",
+      "verifiedAt": "2026-10-05T14:56:41Z"
     },
     "STAGING_DATABASE": {
       "status": "PENDING",
       "owner": "database-owner",
-      "evidence": "No isolated remote PostgreSQL/PostGIS URL or credentials are configured. Migration inventory now ends at 016 and migration-runner tests cover it; live isolation remains unobserved.",
-      "requiredAction": "Provision a separate staging database, apply migrations 001–016, and verify roles, correction-role isolation, and fixture-only data.",
-      "verifiedAt": "2026-10-02T21:14:45Z"
+      "evidence": "Phase 4 access check (2026-10-05T14:56:41Z): No isolated remote PostgreSQL/PostGIS configuration or Docker Engine was available. Migration inventory/code tests do not prove a live schema or grants.",
+      "requiredAction": "Provision separate staging DB, apply migrations 001–latest, verify checksums, roles, permissions, schema drift, and fixture-only data.",
+      "verifiedAt": "2026-10-05T14:56:41Z"
     },
     "STAGING_DEPLOYMENT": {
       "status": "PENDING",
       "owner": "release-engineering",
-      "evidence": "No staging URL or hosting credentials are configured; no cloud deployment was attempted.",
-      "requiredAction": "Select and configure the staging host, inject secrets through its secret manager, and deploy Web plus the fixture-only worker artifact.",
-      "verifiedAt": "2026-10-02T21:14:45Z"
+      "evidence": "Phase 4 access check (2026-10-05T14:56:41Z): No staging URL, GitHub staging environment, repository Actions secrets, hosting credentials, or SSH deployment credentials were available. No cloud deployment was attempted.",
+      "requiredAction": "Provision/configure the host and secret manager; deploy Web plus fixture-only worker.",
+      "verifiedAt": "2026-10-05T14:56:41Z"
     },
     "STAGING_SMOKE": {
       "status": "PENDING",
       "owner": "qa-owner",
-      "evidence": "No staging host is available. scripts/staging-smoke.mjs has not been run against a real HTTPS deployment.",
-      "requiredAction": "Run scripts/staging-smoke.mjs and record endpoint, noindex, security-header, cache, nearby POST, and commit-SHA results.",
-      "verifiedAt": "2026-10-02T21:14:45Z"
+      "evidence": "Phase 4 access check (2026-10-05T14:56:41Z): STAGING_SITE_URL is absent. No smoke was run against real HTTPS. Current script does not cover authenticated login, correction submission/review, or provider log privacy.",
+      "requiredAction": "Provision isolated staging, complete the full live workflow, and record endpoint, security, privacy, correction, and commit evidence.",
+      "verifiedAt": "2026-10-05T14:56:41Z"
     },
     "BACKUP_RESTORE": {
       "status": "PENDING",
       "owner": "database-owner",
-      "evidence": "The local disposable synthetic backup/restore drill passed, but no backup has been restored into a separate actual staging database.",
-      "requiredAction": "Run a staging backup and restore to a separate target; verify schema, PostGIS, audit, source records, and public data.",
-      "verifiedAt": "2026-10-02T21:14:45Z"
+      "evidence": "Phase 4 access check (2026-10-05T14:56:41Z): No staging DB access was available. Local/CI synthetic backup evidence is not a real staging backup or restore drill.",
+      "requiredAction": "Back up staging and restore into a distinct disposable target; verify schema, PostGIS, audit, source state, and synthetic data.",
+      "verifiedAt": "2026-10-05T14:56:41Z"
     },
     "LOCAL_BACKUP_RESTORE_DRILL": {
       "status": "PASS",
@@ -90,37 +90,37 @@
     "DEPLOYMENT_NEARBY_PRIVACY": {
       "status": "PENDING",
       "owner": "privacy-owner",
-      "evidence": "Application code does not log request bodies, but browser history, application logs, host access logs, and gateway/body capture have not been verified on a deployment.",
-      "requiredAction": "Use sentinel coordinates to inspect browser URL/history, application logs, host access logs, and gateway logs; obtain evidence that provider request bodies are not captured or retained.",
-      "verifiedAt": "2026-10-02T21:14:45Z"
+      "evidence": "Phase 4 access check (2026-10-05T14:56:41Z): No deployed staging host/log access was available. Application POST behavior is code evidence only; browser, app, proxy, analytics, and error logs were not inspected live.",
+      "requiredAction": "Send sentinel coordinates and inspect browser history plus application, host/proxy, analytics, and error tracking logs.",
+      "verifiedAt": "2026-10-05T14:56:41Z"
     },
     "PRODUCTION_SECURITY_HEADERS": {
       "status": "PENDING",
       "owner": "security-owner",
-      "evidence": "Security headers are configured in code, but no HTTPS staging response was inspected. CSP remains Report-Only.",
-      "requiredAction": "Verify HSTS, content type, referrer, permissions, frame restrictions, and CSP reports on HTTPS staging; assess violations before any CSP enforcement change.",
-      "verifiedAt": "2026-10-02T21:14:45Z"
+      "evidence": "Phase 4 access check (2026-10-05T14:56:41Z): No HTTPS staging response was available. CSP remains Content-Security-Policy-Report-Only; enforcement is not claimed.",
+      "requiredAction": "Inspect HSTS, content type, referrer, permissions, framing, and CSP status on HTTPS staging.",
+      "verifiedAt": "2026-10-05T14:56:41Z"
     },
     "PRODUCTION_RATE_LIMITING": {
       "status": "PENDING",
       "owner": "platform-owner",
-      "evidence": "Shared Redis REST fixed-window limiter is implemented for facilities, details, search, nearby, correction submit, and admin login. Missing backend, trusted proxy identity, or HMAC secret fails closed. No real Redis credentials, multi-instance deployment, or live latency/cost test is configured.",
-      "requiredAction": "Provision the selected shared Redis REST backend and secrets; verify trusted proxy identity, limits across multiple instances, outage behavior, request logs, and budgets on staging.",
-      "verifiedAt": "2026-10-05T13:49:06Z"
+      "evidence": "Phase 4 access check (2026-10-05T14:56:41Z): No Redis REST configuration or multi-instance staging deployment was available. Limiter tests are not live distributed evidence.",
+      "requiredAction": "Provision shared Redis and verify shared limits across instances plus fail-closed outage behavior.",
+      "verifiedAt": "2026-10-05T14:56:41Z"
     },
     "MONITORING": {
       "status": "PENDING",
       "owner": "operations-owner",
-      "evidence": "Monitoring requirements are documented, but no external alert delivery or production metrics destination is configured.",
-      "requiredAction": "Configure and exercise external alerts for web health/5xx, DB readiness, worker dead-letter/sync failures, and backup age.",
-      "verifiedAt": "2026-10-02T21:14:45Z"
+      "evidence": "Phase 4 access check (2026-10-05T14:56:41Z): No staging host, monitoring destination, alert integration, or worker heartbeat target was configured; no alert test was sent.",
+      "requiredAction": "Configure and exercise health/5xx, DB, worker, latency, and backup-age monitoring and alert delivery.",
+      "verifiedAt": "2026-10-05T14:56:41Z"
     },
     "WORKER_HOSTING": {
       "status": "PENDING",
       "owner": "data-operations",
-      "evidence": "The collector container is an artifact only; no scheduler/worker runtime has been selected or deployed.",
-      "requiredAction": "Choose a runtime that supports scheduler --once and worker --once/loop; verify restart policy, secret injection, network access, logs, resource limits, and fixture-only staging execution.",
-      "verifiedAt": "2026-10-02T21:14:45Z"
+      "evidence": "Phase 4 access check (2026-10-05T14:56:41Z): Collector is an artifact only; no long-running worker or scheduler runtime is configured or deployed.",
+      "requiredAction": "Deploy a separate worker/scheduler, then verify restart, health, task lifecycle, lease recovery, and fixture-only schedules.",
+      "verifiedAt": "2026-10-05T14:56:41Z"
     },
     "PRODUCTION_BASEMAP": {
       "status": "PENDING",
@@ -184,6 +184,13 @@
       "evidence": "Redis REST fixed-window implementation protects facilities, details, search, nearby, corrections and admin session endpoints; HMAC client key, trusted-proxy requirement, HTTPS validation, and fail-closed behavior covered by unit tests. Web unit/typecheck/lint/build and P13 browser QA pass. No real provider credentials or deployed distributed evidence.",
       "requiredAction": "Keep PRODUCTION_RATE_LIMITING pending until staging verifies provider credentials, multiple instances, abuse behavior, logs, cost and latency.",
       "verifiedAt": "2026-10-05T13:49:06Z"
+    },
+    "STAGING_CORRECTION_FLOW": {
+      "status": "PENDING",
+      "owner": "web-and-database-owner",
+      "evidence": "Phase 4 access check (2026-10-05T14:56:41Z): no staging URL, admin credentials, or remote correction queue was available. No synthetic correction was submitted or reviewed.",
+      "requiredAction": "On fixture-only staging, authenticate an admin, submit a synthetic correction, verify queue and audit visibility, review it, and prove the facility row remains unchanged.",
+      "verifiedAt": "2026-10-05T14:56:41Z"
     }
   }
 }
