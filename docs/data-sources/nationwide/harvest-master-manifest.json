@@ -497,5 +497,176 @@
     "source_auto_approvals": 0,
     "raw_files_committed_to_git": false,
     "status": "COMPLETE_FOR_TARGETED_HIGH_YIELD_PASS"
+  },
+  "round7_summary": {
+    "search_date": "2026-10-06",
+    "regions_checked": 18,
+    "cities_checked": 31,
+    "new_official_leads": 19,
+    "new_page_evidence_records": 28,
+    "new_raw_files_acquired": 0,
+    "historical_files_reacquired": 0,
+    "new_raw_rows": 0,
+    "baseline_current_candidates": 160,
+    "baseline_traceable": 160,
+    "baseline_traceability_gaps": 0,
+    "new_distinct_candidates": 27,
+    "current_distinct_candidates": 187,
+    "evidence_record_types": {
+      "EYE_SPECIALTY_HOSPITAL_EXPLICIT": 17,
+      "OFFICIAL_CLINICAL_SPECIALTY_PROGRAM": 1,
+      "OPHTHALMOLOGY_DEPARTMENT_EXPLICIT": 10
+    },
+    "distinct_candidate_evidence_types": {
+      "OPHTHALMOLOGY_DEPARTMENT_EXPLICIT": 21,
+      "EYE_SPECIALTY_HOSPITAL_EXPLICIT": 45,
+      "EYE_SPECIALTY_CLINIC_EXPLICIT": 4,
+      "OFFICIAL_CLINICAL_SPECIALTY_PROGRAM": 12,
+      "OPHTHALMOLOGY_LICENSE_SCOPE_EXPLICIT": 105
+    },
+    "traceability_gaps": 0,
+    "local_source_file_hashes_verified": 14,
+    "all_local_source_hashes_pass": true,
+    "rights_status": "ACQUIRED_RIGHTS_PENDING; no production approval granted",
+    "production_database_writes": 0,
+    "geocoder_calls": 0,
+    "facilities_published": 0,
+    "raw_files_committed_to_git": false,
+    "source_pages": [
+      {
+        "source_key": "round7-baoji-current-2026",
+        "url": "https://wjw.baoji.gov.cn/zzzb/xqdt/202603/t20260319_1255134.html",
+        "evidence_entries": 1
+      },
+      {
+        "source_key": "round7-changshu-clinics-2024",
+        "url": "https://www.changshu.gov.cn/zgcs/c100464/202403/ebfb7fce469845d583fbbf70759c723e.shtml",
+        "evidence_entries": 3
+      },
+      {
+        "source_key": "round7-datong-eye-hospital-2026",
+        "url": "https://sthjj.dt.gov.cn/dtssthjjz/gsl/202609/54a6ae60dc3f4ffaa6bcd3c54503a6b0.shtml",
+        "evidence_entries": 1,
+        "supporting_urls": [
+          "https://wjw.shanxi.gov.cn/zfxxgk/fdzdgknr/gggs/202604/P020260421817527926526.pdf"
+        ]
+      },
+      {
+        "source_key": "round7-fuzhou-health-list-2024",
+        "url": "https://www.fuzhou.gov.cn/zgfzzt/swjw/fzwj/wjgg/202412/t20241216_4946324.htm",
+        "evidence_entries": 2
+      },
+      {
+        "source_key": "round7-fuzhou-name-change-2026",
+        "url": "https://ybj.fujian.gov.cn/ztzl/ybzx/ggtz_35213/202607/t20260707_7175069.htm",
+        "evidence_entries": 1
+      },
+      {
+        "source_key": "round7-gansu-specialty-2025",
+        "url": "https://wsjk.gansu.gov.cn/wsjk/c112818/202601/174265276/files/222ce001f74c44a9a27391124ba255ed.pdf",
+        "evidence_entries": 1
+      },
+      {
+        "source_key": "round7-ganzhou-insurer-list-2026",
+        "url": "https://ybj.ganzhou.gov.cn/gzsylbzj/c103161/202603/edfef299c8f2498a838ce2350666a016.shtml",
+        "evidence_entries": 1
+      },
+      {
+        "source_key": "round7-harbin-hospital-list-2026",
+        "url": "https://www.hrbzx.gov.cn/2026-01/22/content_2881948.htm",
+        "evidence_entries": 1
+      },
+      {
+        "source_key": "round7-hlj-eye-hospital-2026",
+        "url": "https://ybj.hlj.gov.cn/ybj/c105387/202601/c00_31904870.shtml",
+        "evidence_entries": 1
+      },
+      {
+        "source_key": "round7-hohhot-insurer-list-2024",
+        "url": "https://ylbzj.nmg.gov.cn/xwzx/dtxx/202410/t20241030_2599413.html",
+        "evidence_entries": 1
+      },
+      {
+        "source_key": "round7-jilin-list-2026",
+        "url": "https://www.jlrd.gov.cn/jlsjk/202406/P020260104582425421250.pdf",
+        "evidence_entries": 3
+      },
+      {
+        "source_key": "round7-kunming-medical-query",
+        "url": "https://ylbz.yn.gov.cn/index.php?c=page&id=4",
+        "evidence_entries": 1
+      },
+      {
+        "source_key": "round7-liuzhou-eye-hospital-list",
+        "url": "https://wsjkw.gxzf.gov.cn/ggfw_49562/bmxxcx/t17506002.shtml",
+        "evidence_entries": 1
+      },
+      {
+        "source_key": "round7-shanghai-huashan-department",
+        "url": "https://www.huashan.org.cn/hsdy/linchuang/1259.html",
+        "evidence_entries": 1
+      },
+      {
+        "source_key": "round7-shanxi-eye-hospital-2026",
+        "url": "https://wjw.shanxi.gov.cn/tzgg/gsgg/202605/t20260521_10131496.shtml",
+        "evidence_entries": 1
+      },
+      {
+        "source_key": "round7-urumqi-eye-ent-2025",
+        "url": "https://www.wlmq.gov.cn/wlmqs/c121055/202506/fbb25a36e6b54b9e8eb29def91ff8cb5.shtml",
+        "evidence_entries": 1
+      },
+      {
+        "source_key": "round7-wuhan-renmin-department",
+        "url": "https://rm.rmhospital.com/c/yltdt/page/8.html",
+        "evidence_entries": 1
+      },
+      {
+        "source_key": "round7-wuhan-tongji-department",
+        "url": "https://www.tjh.com.cn/channels/197.html",
+        "evidence_entries": 1
+      },
+      {
+        "source_key": "round7-wuhan-union-department",
+        "url": "https://www.whuh.com/ppxk/tszk/yk.htm",
+        "evidence_entries": 1
+      },
+      {
+        "source_key": "round7-wuhan-zhongnan-department",
+        "url": "https://www.znhospital.cn/yk.html",
+        "evidence_entries": 1
+      },
+      {
+        "source_key": "round7-wuxi-second-department",
+        "url": "https://www.wx2h.com/kszj/keshidetail/index/id/24/tid/2.html",
+        "evidence_entries": 1
+      },
+      {
+        "source_key": "round7-xian-first-hospital-department",
+        "url": "https://www.xa.gov.cn/web_files/xian/file/2025/08/12/202508121659367322613.pdf",
+        "evidence_entries": 1
+      },
+      {
+        "source_key": "round7-yinchuan-list-2026",
+        "url": "https://www.yinchuan.gov.cn/xxgk/bmxxgkml/ycsylbzj/xxgkml_38315/bmwj_38322/202602/W020260212617708641178.pdf",
+        "evidence_entries": 1
+      }
+    ],
+    "current_source_evidence_counts_by_type": {
+      "OPHTHALMOLOGY_DEPARTMENT_EXPLICIT": 22,
+      "EYE_SPECIALTY_HOSPITAL_EXPLICIT": 49,
+      "EYE_SPECIALTY_CLINIC_EXPLICIT": 4,
+      "OFFICIAL_CLINICAL_SPECIALTY_PROGRAM": 12,
+      "OPHTHALMOLOGY_LICENSE_SCOPE_EXPLICIT": 105
+    },
+    "current_distinct_candidate_counts_by_type": {
+      "OPHTHALMOLOGY_DEPARTMENT_EXPLICIT": 21,
+      "EYE_SPECIALTY_HOSPITAL_EXPLICIT": 45,
+      "EYE_SPECIALTY_CLINIC_EXPLICIT": 4,
+      "OFFICIAL_CLINICAL_SPECIALTY_PROGRAM": 12,
+      "OPHTHALMOLOGY_LICENSE_SCOPE_EXPLICIT": 105
+    },
+    "regions_with_candidates": 20,
+    "cities_with_candidates": 25
   }
 }
