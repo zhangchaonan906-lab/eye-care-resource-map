@@ -39,8 +39,8 @@ The 2026 Wuhan health-commission administrative notice explicitly records a diag
 
 ## Region and city coverage
 
-- Regions with at least one candidate: **{len(covered)}/31** ({'、'.join(sorted(covered))}). No coverage is inferred from neighboring areas.
-- Candidate-bearing cities: **{len(city_counts)}**.
+- Regions with at least one candidate: **23/31** (上海、云南、内蒙古、北京、吉林、四川、宁夏、安徽、山东、山西、广东、广西、新疆、江苏、江西、河南、浙江、湖北、湖南、甘肃、福建、陕西、黑龙江). No coverage is inferred from neighboring areas.
+- Candidate-bearing cities: **28**.
 - Focus cities:
 
 | City | Candidates |
@@ -61,26 +61,26 @@ These are candidate counts, not estimates of each city’s complete provider pop
 
 ## Source accessibility and freshness
 
-There are **{len(sources)} unique official source URLs** and **{all_url} candidate-to-source URL links** in the local master ledger. In Round 8, seven new official lead URLs were checked; six were confirmed through direct page open or official search results. The Zhengzhou Puri hospital contact page could not be directly opened by the browser tool and remains unresolved at URL level; its identity was separately corroborated by a Zhengzhou health-commission 2024 advertising-approval entry. The other **47 inherited URLs were not rechecked during this round**, so an overall live accessibility rate is not claimed. Search/index availability is not treated as reuse permission.
+There are **54 unique official source URLs** and **200 candidate-to-source URL links** in the local master ledger. In Round 8, seven new official lead URLs were checked; six were confirmed through direct page open or official search results. The Zhengzhou Puri hospital contact page could not be directly opened by the browser tool and remains unresolved at URL level; its identity was separately corroborated by a Zhengzhou health-commission 2024 advertising-approval entry. The other **47 inherited URLs were not rechecked during this round**, so an overall live accessibility rate is not claimed. Search/index availability is not treated as reuse permission.
 
 Examples of current first-party evidence include the Sichuan Provincial People’s Hospital ophthalmology department [department page](https://www.samsph.cn/eyes_intro/), Hangzhou First People’s Hospital [ophthalmology department](https://www.hz-hospital.com/service/deptment_details/id/35), and Hefei’s USTC First Affiliated Hospital [ophthalmology department](https://www.ahslyy.com.cn/jyb/col1193/13684). The first-party pages establish department evidence; multi-campus pages do not justify selecting one address.
 
 ## Matching and campus review
 
-- Cross-source exact corroborations: **{case.get('EXACT',0)}**; these reinforce existing candidates and did not create new entities.
-- Probable aliases requiring review: **{case.get('PROBABLE',0)}**.
-- Ambiguous-campus cases requiring review: **{case.get('AMBIGUOUS_CAMPUS',0)}**.
-- Conflicts: **{case.get('CONFLICT',0)}**.
-- Candidate flags: **{metrics['possible_multi_site']}** possible multi-site; **{metrics['ambiguous_campus_candidate_flags']}** ambiguous-campus.
+- Cross-source exact corroborations: **4**; these reinforce existing candidates and did not create new entities.
+- Probable aliases requiring review: **2**.
+- Ambiguous-campus cases requiring review: **1**.
+- Conflicts: **0**.
+- Candidate flags: **4** possible multi-site; **1** ambiguous-campus.
 
 Probable aliases and campus conflicts remain separate review cases. No fuzzy matching or automatic entity merge was performed. Multi-site evidence was retained without inventing a single facility address.
 
 ## Remaining issues
 
-1. **Addresses:** {metrics['current_candidates']-metrics['complete_address']} candidates have no address recorded; keep those values empty until an exact official fact is verified.
-2. **Freshness:** {metrics['missing_date']} candidates have no freshest evidence date.
+1. **Addresses:** 155 candidates have no address recorded; keep those values empty until an exact official fact is verified.
+2. **Freshness:** 11 candidates have no freshest evidence date.
 3. **Coordinates:** no candidate has verified map coordinates. No geocoder was called and no placeholder points were generated.
-4. **Coverage:** the 250-candidate target was not met ({metrics['current_candidates']} present); it remains a non-mandatory goal. The pool is not a national complete census.
+4. **Coverage:** the 250-candidate target was not met (193 present); it remains a non-mandatory goal. The pool is not a national complete census.
 5. **Use rights:** current public availability and university competition context do not by themselves establish display rights; see the Round 8 competition assessment.
 
 The full record-level ledger and verification notes are local only at `C:\Users\72343\AppData\Local\EyeCareResourceMap\HarvestStore\round8\candidate-master-ledger.json`.

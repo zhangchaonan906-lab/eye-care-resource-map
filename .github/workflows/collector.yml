@@ -24,6 +24,12 @@ jobs:
         with:
           python-version: "3.12"
 
+      - name: Test Round 8 report integrity checks
+        run: python -m unittest scripts.test_round8_report_integrity -v
+
+      - name: Validate Round 8 reports
+        run: python scripts/check_round8_report_integrity.py
+
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:

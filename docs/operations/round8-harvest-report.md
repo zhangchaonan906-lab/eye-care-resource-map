@@ -56,5 +56,5 @@ The six additions are traceable to sources such as the [Sichuan Provincial Peopl
 - Local file fingerprint verification: **14 PASS / 0 FAIL / 0 missing or ambiguous**.
 - Candidate ledger: **193 distinct keys**, all traceable; verify during final checks.
 - Production database writes: **0** by workflow.
-- `git diff --check`: pending final staging review.
-- CI: pending PR creation.
+- `git diff --check`: PASS on the report and integrity-check changes.
+- CI baseline before this follow-up: PASS for `collector`, `p13-e2e`, `p13-accessibility`, `p13-system-e2e`, and `p14-release-check`; the expanded CI run with the report-integrity gate is required before squash merge.
